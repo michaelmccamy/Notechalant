@@ -1,6 +1,6 @@
 // Copy this file to secrets.h and fill it in. secrets.h is gitignored.
 
-// 2.4 GHz network the laptop is also on. Leave WIFI_SSID empty for USB only.
+// 2.4 GHz network the laptop is also on. Leave WIFI_SSID empty for Bluetooth and USB only.
 #define WIFI_SSID "your-network"
 #define WIFI_PASSWORD "your-password"
 

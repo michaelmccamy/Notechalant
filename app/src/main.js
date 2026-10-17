@@ -1,6 +1,6 @@
 // Wires the pieces together. Each module does one job.
 //
-//   relay / serial / wifi / replay  ->  hub.onPenData(sample)  ->  motion.update  ->  ink.moveBy
+//   relay / bluetooth / serial / wifi / replay  ->  hub.onPenData(sample)  ->  motion.update  ->  ink.moveBy
 //   mouse                   ->  ink.moveTo
 
 import { createInkCanvas } from './ink/inkCanvas.js';
@@ -10,6 +10,7 @@ import { parseRecording } from './input/parseSample.js';
 import { connectSerial, serialSupported } from './input/serial.js';
 import { connectWebSocket } from './input/websocket.js';
 import { connectRelay, RELAY_URL } from './input/relay.js';
+import { bluetoothSupported, connectBluetooth, requestPen } from './input/bluetooth.js';
 import { playRecording } from './input/replay.js';
 import { createMotion } from './motion/index.js';
 import { createToolbar } from './ui/toolbar.js';
@@ -116,6 +117,43 @@ const toolbar = createToolbar({
       penOnline = nowOnline;
     });
     startSource('relay', connection.disconnect);
+  },
+
+  // Like the relay, Bluetooth keeps reconnecting to the same pen until the button is clicked again.
+  onBluetooth: async function () {
+    if (active !== null && active.name === 'bluetooth') {
+      await stopActive();
+      toolbar.setStatus('Bluetooth off');
+      return;
+    }
+    if (!bluetoothSupported()) {
+      toolbar.setStatus('Bluetooth needs Chrome or Edge', true);
+      return;
+    }
+    // The chooser has to open straight from the click, so pick the pen before stopping anything.
+    let device;
+    try {
+      device = await requestPen();
+    } catch (err) {
+      // Closing the chooser without picking also lands here.
+      toolbar.setStatus(err.message, true);
+      return;
+    }
+    await stopActive();
+    toolbar.setStatus('Connecting to ' + (device.name || 'pen'));
+    let penOnline = false;
+    const connection = connectBluetooth(device, hub.onPenData, function (status) {
+      toolbar.setBluetoothStatus(status);
+      if (status.connected && !penOnline) {
+        hub.recalibrate();
+        toolbar.setStatus('Pen connected. Hold still to calibrate');
+      } else if (!status.connected && penOnline) {
+        liftPen();
+        toolbar.setStatus('Pen disconnected. Reconnecting');
+      }
+      penOnline = status.connected;
+    });
+    startSource('bluetooth', connection.disconnect);
   },
 
   onSerial: async function () {
