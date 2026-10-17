@@ -12,6 +12,7 @@
       <div class="brand">Notechalant</div>
 
       <div class="group" id="colors" aria-label="Pen color"></div>
+      <button id="pen-size" class="size-button"></button>
 
       <div class="group">
         <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
@@ -29,6 +30,7 @@
         <button id="connect-relay" title="Receive the pen through the laptop relay (npm run relay)">Relay</button>
         <button id="connect-bluetooth" title="Connect to the pen over Bluetooth (Chrome or Edge)">Bluetooth</button>
         <button id="connect-serial" title="Connect over USB (Chrome or Edge)">USB</button>
+        <button id="connect-remote" title="Connect the IR remote's Arduino over USB (Chrome or Edge). Works alongside the pen">Remote</button>
         <button id="connect-wifi" title="Fallback: connect straight to a pen hosting its own WebSocket server">WiFi</button>
         <button id="load-recording" title="Replay a recorded .jsonl file">Load recording</button>
         <input id="recording-file" type="file" accept=".jsonl,.txt,.json" hidden />
@@ -99,6 +101,8 @@
         <div class="notes-blocks" id="notes-blocks" aria-live="polite"></div>
       </aside>
     </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <div class="drop-overlay" id="drop-overlay" hidden>
       <div class="drop-overlay-box">Drop to open</div>

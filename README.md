@@ -17,6 +17,7 @@ Built at SwampHacks XII.
 | `docs/data-format.md` | The sample format every part of the system agrees on | Everyone |
 | `firmware/stm32-test/` | Tonight's USB serial test on the STM32 | CpE 1 |
 | `firmware/esp32/` | Bluetooth, WiFi, and USB firmware for the real pen | CpE 1 |
+| `firmware/remote/` | Arduino UNO that turns the Elegoo kit's IR remote into a clicker for the app | Anyone |
 | `data/recordings/` | Recorded pen data (`.jsonl`) for testing without hardware | CpE 1 |
 | `app/src/motion/` | Gyro to cursor movement, calibration, smoothing | CpE 2 |
 | `app/src/` (everything else) | Canvas, inputs, slides, toolbar | CS |
@@ -101,10 +102,11 @@ All hardware inputs end up calling the same function, `onPenData(sample)`, in `a
 - **Bluetooth** connects to the pen over Bluetooth Low Energy and reconnects on its own. This is the main wireless path.
 - **USB** connects to the STM32 or ESP32 over Web Serial at 115200 baud.
 - **WiFi** connects straight to a WebSocket server on the ESP32. This is the fallback, if the pen hosts its own network.
+- **Remote** connects the IR remote's Arduino over Web Serial. It runs alongside whichever pen input is on and changes colors, pen sizes, pages and tabs, moves through the explorer, and toggles present mode. See `firmware/remote/README.md` for the buttons.
 
 Hold **Space** to force pen down. This stands in for the button until it's wired.
 
-Press **C** to recenter the cursor and **R** to recalibrate the motion module.
+Press **C** to recenter the cursor and **R** to recalibrate the motion module. Press **P** to enter or leave present mode, which hides everything but the page, and **Esc** to leave it.
 
 ## Workflow
 
