@@ -1,0 +1,12 @@
+{
+  "name": "notechalant-relay",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "relay": "node relay.js",
+    "fakepen": "node fakepen.js"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
+  }
+}

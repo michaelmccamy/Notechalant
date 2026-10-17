@@ -26,8 +26,11 @@ If you change the sensor range in firmware, change the divisor to match.
 
 ## Transport
 
+- **WiFi through the relay (primary).** The ESP32 is a WebSocket *client*. It joins the same WiFi network as the laptop and connects to `ws://<laptop ip>:8080/pen`, where `relay/relay.js` is running. Each message holds one or more lines in the same format. The relay checks each line and forwards it to the browser at `ws://localhost:8080/app`, wrapped as `{"type":"sample", ...}`. When a pen connects or disconnects it also sends `{"type":"status","pens":N}`. The relay prints the exact pen URL when it starts.
 - **USB serial** at 115200 baud. Firmware may print other text at boot. The app skips any line that isn't valid JSON with all eight fields.
-- **WiFi** uses a WebSocket server running on the ESP32, port 81. Each message holds one or more lines in the same format.
+- **WiFi direct (fallback).** The ESP32 hosts its own network and a WebSocket server at `ws://192.168.4.1:81`, and the browser connects straight to it. Each message holds one or more lines in the same format.
+
+Why the relay is primary: with direct WiFi, the laptop has to join the pen's own network, so it loses internet and the recognition server can't reach Gemini. With the relay, the pen and laptop share the venue WiFi (or a phone hotspot) and the laptop stays online. The relay also lets the app reconnect on its own when the pen restarts.
 
 ## Recording files
 
