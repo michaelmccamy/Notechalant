@@ -73,6 +73,7 @@
           <div class="page" id="page">
             <div class="page-content" id="page-content"></div>
             <canvas id="ink"></canvas>
+            <canvas id="debug-trail" hidden></canvas>
           </div>
           <div class="page-message" id="page-message" hidden>
             <div class="page-message-title"></div>
@@ -99,6 +100,83 @@
         <div class="notes-blocks" id="notes-blocks" aria-live="polite"></div>
       </aside>
     </main>
+
+    <aside class="debug" id="debug" aria-label="Motion debug" hidden>
+      <div class="debug-head">
+        <span class="explorer-label">Motion debug</span>
+        <span class="debug-hint">D to hide</span>
+        <button id="debug-close" class="icon-button" aria-label="Close">×</button>
+      </div>
+
+      <section class="debug-section">
+        <div class="debug-title">
+          Gyro, last 5 s
+          <span class="debug-legend"><i style="background:#d93025"></i>gx <i style="background:#1f9d55"></i>gy <i style="background:#2f6fed"></i>gz</span>
+        </div>
+        <canvas class="debug-graph" id="debug-gyro"></canvas>
+        <div class="debug-title">
+          Cursor movement per sample
+          <span class="debug-legend"><i style="background:#8e44ad"></i>dx <i style="background:#f29900"></i>dy</span>
+        </div>
+        <canvas class="debug-graph small" id="debug-move"></canvas>
+        <div class="debug-readout" id="debug-readout">Waiting for pen data</div>
+        <div class="tuning-row">
+          <span>Bias <span class="debug-readout" id="debug-bias"></span></span>
+          <button id="debug-recalibrate" class="head-button" title="Hold the pen still, then click (or press R)">Recalibrate</button>
+        </div>
+      </section>
+
+      <section class="debug-section">
+        <div class="tuning-row">
+          <span class="debug-title">Axes</span>
+          <button id="debug-wizard" class="head-button" title="Hold still, tilt right, tilt up, 2 seconds each">Run axis wizard</button>
+        </div>
+        <div class="debug-wizard-text" id="debug-wizard-text">Hold still, tilt right, tilt up, 2 seconds each. The cursor stays put meanwhile.</div>
+        <progress id="debug-wizard-bar" max="1" value="0" hidden></progress>
+        <div class="tuning-row">
+          <label for="tune-x-axis">Horizontal axis</label>
+          <span class="tuning-pair">
+            <select id="tune-x-axis"><option value="measured">Measured</option><option>gx</option><option>gy</option><option>gz</option></select>
+            <label class="toggle"><input id="tune-invert-x" type="checkbox" /> Invert</label>
+          </span>
+        </div>
+
+        <div class="tuning-row">
+          <label for="tune-y-axis">Vertical axis</label>
+          <span class="tuning-pair">
+            <select id="tune-y-axis"><option value="measured">Measured</option><option>gx</option><option>gy</option><option>gz</option></select>
+            <label class="toggle"><input id="tune-invert-y" type="checkbox" /> Invert</label>
+          </span>
+        </div>
+      </section>
+
+      <section class="debug-section">
+        <div class="debug-title">Tuning</div>
+        <label class="tuning-row" for="tune-sensitivity">
+          <span>Sensitivity</span>
+          <output id="tune-sensitivity-value"></output>
+        </label>
+        <input id="tune-sensitivity" type="range" min="1" max="40" step="0.5" />
+
+        <label class="tuning-row" for="tune-smoothing">
+          <span>Smoothing</span>
+          <output id="tune-smoothing-value"></output>
+        </label>
+        <input id="tune-smoothing" type="range" min="0" max="1" step="0.05" />
+
+        <label class="tuning-row" for="tune-deadzone">
+          <span>Deadzone</span>
+          <output id="tune-deadzone-value"></output>
+        </label>
+        <input id="tune-deadzone" type="range" min="0" max="10" step="0.1" />
+      </section>
+
+      <div class="tuning-actions">
+        <button id="debug-record" title="Save raw samples, dx and dy, and settings to a .jsonl file">Record</button>
+        <button id="tune-copy" title="Copy all motion settings as JSON, to paste over DEFAULT_CONFIG in motion/index.js">Copy JSON</button>
+        <button id="tune-reset" title="Put the tuning settings back to the defaults">Reset</button>
+      </div>
+    </aside>
 
     <div class="drop-overlay" id="drop-overlay" hidden>
       <div class="drop-overlay-box">Drop to open</div>

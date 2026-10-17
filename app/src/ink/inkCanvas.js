@@ -87,6 +87,11 @@ export function createInkCanvas(canvas) {
     moveTo(x, y, penDown);
   }
 
+  // A copy, for the debug trail.
+  function getCursor() {
+    return { x: cursor.x, y: cursor.y, down: cursor.down };
+  }
+
   function centerCursor() {
     finishStroke();
     cursor.x = cssWidth / 2;
@@ -216,6 +221,7 @@ export function createInkCanvas(canvas) {
     moveTo,
     moveBy,
     centerCursor,
+    getCursor,
     hideCursor,
     undo,
     clear,

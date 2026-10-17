@@ -18,6 +18,7 @@ import { bluetoothSupported, connectBluetooth, requestPen } from './input/blueto
 import { playRecording } from './input/replay.js';
 import { createMotion } from './motion/index.js';
 import { createToolbar } from './ui/toolbar.js';
+import { createDebugPanel } from './debug/debugPanel.js';
 import { recognizeImage } from './recognize.js';
 import { createNotesController } from './notes/notesController.js';
 import { createWhiteboard, openDocument } from './files/documents.js';
@@ -51,7 +52,20 @@ const NOTES_SHOWN_KEY = 'notechalant.notesShown';
 const canvas = document.getElementById('ink');
 const ink = createInkCanvas(canvas);
 const motion = createMotion();
-const hub = createInputHub({ ink: ink, motion: motion });
+// The debug panel wraps the motion module so it sees every sample from every input.
+const debug = createDebugPanel(motion, ink, {
+  onRecalibrate: function () {
+    hub.recalibrate();
+    toolbar.setStatus('Recalibrating. Hold still');
+  },
+  onStatus: function (text, isError) {
+    toolbar.setStatus(text, isError);
+  },
+  getSource: function () {
+    return active === null ? null : active.name;
+  },
+});
+const hub = createInputHub({ ink: ink, motion: debug.motion });
 
 attachMouse(canvas, ink);
 
@@ -771,6 +785,7 @@ function saveSetting(key, value) {
 // Ctrl/Cmd+S  save a copy with the ink on it
 // C  recenter cursor
 // R  recalibrate motion
+// D or T  show or hide the motion debug panel (live graphs, axis wizard, recording, tuning)
 // Enter  transcribe new writing on this page now
 // None of them fire while typing in a text field, like the note editor.
 window.addEventListener('keydown', function (event) {
@@ -794,6 +809,8 @@ window.addEventListener('keydown', function (event) {
   } else if (event.key === 'r' || event.key === 'R') {
     hub.recalibrate();
     toolbar.setStatus('Recalibrating. Hold still');
+  } else if (/^[dDtT]$/.test(event.key) && !event.ctrlKey && !event.metaKey) {
+    debug.toggle();
   } else if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) {
     event.preventDefault();
     toolbar.buttons.transcribe.click();

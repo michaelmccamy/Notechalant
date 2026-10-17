@@ -106,6 +106,8 @@ Hold **Space** to force pen down. This stands in for the button until it's wired
 
 Press **C** to recenter the cursor and **R** to recalibrate the motion module.
 
+Press **D** for the motion debug panel: live gyro graphs, a cursor trail, an axis wizard, tuning sliders, and a **Record** button that saves debug files for `data/recordings/debug/`.
+
 ## Workflow
 
 - Branch per person (`firmware`, `motion`, `app`, `recognition`), merge to `main` often.
