@@ -73,6 +73,12 @@ Open the app and click **Relay**. The toolbar shows whether the relay and pen ar
 
 For the real pen, skip step 2. The laptop and ESP32 must be on the same WiFi network, and the firmware connects to the pen URL for that network, which the relay prints for each interface. Skip VPN interfaces like `utun` (Tailscale), since the ESP32 can't reach them. On a Mac, run `ipconfig getifaddr en0` to confirm your WiFi address. See `docs/data-format.md` for why this is the main WiFi path.
 
+## Deploying to Vercel
+
+`vercel.json` builds the app from `app/` and serves `api/recognize.mjs` as a function that uses the same Gemini code as `server/`. In the Vercel project, set the environment variables `GEMINI_API_KEY` and `GEMINI_MODEL`, then open `/api/health` on the deployed site to check them.
+
+The relay can't run on Vercel, so keep running `npm run relay` on the laptop. The deployed page still connects to it at `ws://localhost:8080/app`. Chrome may ask once to allow local network access. **USB** works too. **WiFi** direct does not, because browsers block `ws://` to the pen's own network from an `https` page.
+
 ## Inputs
 
 All hardware inputs end up calling the same function, `onPenData(sample)`, in `app/src/input/hub.js`.
