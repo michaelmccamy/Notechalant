@@ -37,17 +37,21 @@ export function parseRemoteLine(line) {
 }
 
 // Text arrives in arbitrary chunks, so a line can be split across two reads.
-export function createRemoteSplitter(onButton) {
+// onOther, if given, gets every non-empty line that isn't a known button, for debugging.
+export function createRemoteSplitter(onButton, onOther) {
   let buffer = '';
   return {
     push(chunk) {
       buffer += chunk;
       let newline = buffer.indexOf('\n');
       while (newline !== -1) {
-        const button = parseRemoteLine(buffer.slice(0, newline));
+        const line = buffer.slice(0, newline).trim();
+        const button = parseRemoteLine(line);
         buffer = buffer.slice(newline + 1);
         if (button !== null) {
           onButton(button);
+        } else if (onOther && line !== '') {
+          onOther(line);
         }
         newline = buffer.indexOf('\n');
       }
@@ -56,8 +60,8 @@ export function createRemoteSplitter(onButton) {
 }
 
 // Asks the user to pick the UNO's port, then calls onButton for each press until disconnect()
-// is called or the cable is pulled. onClose runs either way.
-export async function connectRemote(onButton, onClose) {
+// is called or the cable is pulled. onClose runs either way. onOther gets lines that aren't presses.
+export async function connectRemote(onButton, onClose, onOther) {
   if (!('serial' in navigator)) {
     throw new Error('The remote needs Chrome or Edge');
   }
@@ -68,7 +72,7 @@ export async function connectRemote(onButton, onClose) {
   const decoder = new TextDecoderStream();
   const pipeDone = port.readable.pipeTo(decoder.writable).catch(function () {});
   const reader = decoder.readable.getReader();
-  const splitter = createRemoteSplitter(onButton);
+  const splitter = createRemoteSplitter(onButton, onOther);
   let closed = false;
 
   async function readLoop() {

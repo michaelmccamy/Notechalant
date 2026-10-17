@@ -603,7 +603,7 @@ const toolbar = createToolbar({
           toolbar.setRemoteOn(false);
           toolbar.setStatus('Remote disconnected');
         }
-      });
+      }, onRemoteOther);
       remote = connection;
       toolbar.setRemoteOn(true);
       toolbar.setStatus('Remote connected. Press a button on it');
@@ -847,7 +847,15 @@ function switchTab(delta) {
   return next;
 }
 
+// Anything the UNO prints that isn't a known press: its boot line, or a button the sketch
+// doesn't map yet ("OTHER" with its code). Shown so you can see the remote is getting through.
+function onRemoteOther(line) {
+  console.log('[remote]', line);
+  tell('Remote sent: ' + line.slice(0, 80));
+}
+
 function onRemoteButton(button) {
+  console.log('[remote]', button);
   switch (button) {
     case 'COLOR':
       tell('Color: ' + toolbar.nextColor());
