@@ -4,6 +4,7 @@
 //   mouse                   ->  ink.moveTo
 //   explorer / tabs         ->  openDocument  ->  pageView (one page, ink canvas on top)
 //   ink changes             ->  captureInk (page units)  ->  saved to .notechalant/ in the folder
+//   Save copy               ->  buildCopy (document + ink)  ->  new file next to the original
 
 import { createInkCanvas } from './ink/inkCanvas.js';
 import { attachMouse } from './input/mouse.js';
@@ -20,6 +21,7 @@ import { createWhiteboard, openDocument } from './files/documents.js';
 import { createPageView } from './files/pageView.js';
 import { createExplorer } from './files/explorer.js';
 import { createTabs } from './files/tabs.js';
+import { buildCopy } from './files/saveCopy.js';
 import {
   foldersSupported,
   pickFolder,
@@ -28,8 +30,9 @@ import {
   looseInkKey,
   loadLooseInk,
   saveLooseInk,
+  saveCopyAs,
 } from './files/folder.js';
-import { scaleStrokes, packInk, unpackInk, OPENABLE_EXTENSIONS } from './files/fileTypes.js';
+import { scaleStrokes, packInk, unpackInk, copyName, OPENABLE_EXTENSIONS } from './files/fileTypes.js';
 
 const DEFAULT_WS_URL = 'ws://192.168.4.1:81';
 const WS_URL_KEY = 'notechalant.wsUrl';
@@ -319,6 +322,61 @@ async function saveTab(tab) {
   }
 }
 
+// Writes a new file with the active tab's ink drawn on it. A folder file's copy goes next to it
+// in the folder. A single file or the whiteboard asks where to save, since there's no folder.
+// The original is never written to.
+let savingCopy = false;
+
+async function saveCopy() {
+  if (savingCopy) {
+    return;
+  }
+  captureInk();
+  const tab = activeTab;
+  const tabFolder = folder;
+  if (tab.doc.pageCount === 0) {
+    toolbar.setStatus("This file can't be shown, so there's nothing to save", true);
+    return;
+  }
+  if (!Object.values(tab.ink).some((strokes) => strokes.length > 0)) {
+    toolbar.setStatus('Write something first');
+    return;
+  }
+  savingCopy = true;
+  toolbar.setSavingCopy(true);
+  toolbar.setStatus('Saving a copy of ' + tab.name + '…');
+  try {
+    const copy = await buildCopy(tab.doc, tab.ink, function (done, total) {
+      if (total > 1) {
+        toolbar.setStatus('Saving a copy of ' + tab.name + ': page ' + done + ' of ' + total + '…');
+      }
+    });
+    if (tab.path !== null) {
+      // The folder the file came from, even if another one was opened while the copy was made.
+      const savedPath = await tabFolder.saveCopy(tab.path, copy.blob, copy.extension);
+      toolbar.setStatus('Saved ' + savedPath + ' in ' + tabFolder.name + '. The original is unchanged');
+      if (folder === tabFolder) {
+        await explorer.showFolder(folder);
+        explorer.setActive(activeTab.path);
+      }
+    } else {
+      const originalName = tab.doc.file ? tab.doc.file.name : null;
+      const savedName = await saveCopyAs(copyName(tab.name, copy.extension, () => false), copy.blob, copy.extension, originalName);
+      toolbar.setStatus(savedName === null ? 'Copy not saved' : 'Saved ' + savedName + '. The original is unchanged');
+    }
+  } catch (err) {
+    toolbar.setStatus("Couldn't save a copy of " + tab.name + ': ' + err.message, true);
+  } finally {
+    savingCopy = false;
+    toolbar.setSavingCopy(false);
+    // A presentation shows one slide at a time, and saving drew every slide, so put the shown one back.
+    if (tab === activeTab && tab.doc.kind === 'pptx') {
+      captureInk();
+      showPage();
+    }
+  }
+}
+
 function saveDirty() {
   saving = true;
   saveQueue = saveQueue.then(async function () {
@@ -483,6 +541,8 @@ const toolbar = createToolbar({
     toolbar.hideResult();
   },
 
+  onSaveCopy: saveCopy,
+
   onRecognize: async function () {
     if (ink.isEmpty()) {
       toolbar.setStatus('Write something first');
@@ -621,6 +681,7 @@ function saveWsUrl(url) {
 // Space  hold for pen down (stands in for the button)
 // Page Up / Page Down  previous or next page
 // Ctrl/Cmd+Z  undo
+// Ctrl/Cmd+S  save a copy with the ink on it
 // C  recenter cursor
 // R  recalibrate motion
 // Esc  close the result panel
@@ -637,6 +698,9 @@ window.addEventListener('keydown', function (event) {
   } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
     event.preventDefault();
     ink.undo();
+  } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+    event.preventDefault();
+    saveCopy();
   } else if (event.key === 'c' || event.key === 'C') {
     ink.centerCursor();
   } else if (event.key === 'r' || event.key === 'R') {

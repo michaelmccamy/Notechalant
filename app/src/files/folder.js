@@ -1,8 +1,9 @@
 // Access to a folder on the user's computer through the File System Access API (Chrome and Edge),
 // the same way vscode.dev opens local folders. Files are only read. Ink is written to a hidden
 // .notechalant folder inside the opened folder, so the user's own files are never modified.
+// Saving a copy adds a new file next to the original and never replaces an existing one.
 
-import { inkFileName, packInk, unpackInk } from './fileTypes.js';
+import { inkFileName, packInk, unpackInk, copyName } from './fileTypes.js';
 
 const INK_FOLDER = '.notechalant';
 const DB_NAME = 'notechalant';
@@ -108,7 +109,65 @@ function createFolder(root) {
     await writable.close();
   }
 
-  return { name: root.name, root: root, list: list, loadInk: loadInk, saveInk: saveInk };
+  // Writes `blob` as a new file in the same folder as `path`, named like "notes-annotated.pdf".
+  // Returns the new file's path.
+  async function saveCopy(path, blob, extension) {
+    const parts = path.split('/');
+    const name = parts.pop();
+    let dir = root;
+    for (const part of parts) {
+      dir = await dir.getDirectoryHandle(part);
+    }
+    const taken = new Set();
+    for await (const entry of dir.values()) {
+      taken.add(entry.name.toLowerCase());
+    }
+    // Windows and macOS ignore case in file names, so "Notes.pdf" and "notes.pdf" collide.
+    const newName = copyName(name, extension, (candidate) => taken.has(candidate.toLowerCase()));
+    const handle = await dir.getFileHandle(newName, { create: true });
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return parts.concat(newName).join('/');
+  }
+
+  return { name: root.name, root: root, list: list, loadInk: loadInk, saveInk: saveInk, saveCopy: saveCopy };
+}
+
+// For a copy of a file that isn't in an opened folder. Asks where to save it in Chrome and Edge,
+// and downloads it elsewhere. Returns the chosen name, or null if the user cancelled.
+// `originalName` can't be picked, so the copy can't replace the file it came from. (A single
+// file comes without its location, so the name is all there is to check.)
+export async function saveCopyAs(suggestedName, blob, extension, originalName) {
+  if (typeof window.showSaveFilePicker === 'function') {
+    let handle;
+    try {
+      handle = await window.showSaveFilePicker({
+        id: 'notechalant-copy',
+        suggestedName: suggestedName,
+        types: [{ description: extension.toUpperCase() + ' file', accept: { [blob.type]: ['.' + extension] } }],
+      });
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        return null;
+      }
+      throw err;
+    }
+    // Nothing is written until createWritable, so stopping here leaves the original untouched.
+    if (originalName && handle.name.toLowerCase() === originalName.toLowerCase()) {
+      throw new Error('That would replace the original file. Save the copy under a different name');
+    }
+    const writable = await handle.createWritable();
+    await writable.write(blob);
+    await writable.close();
+    return handle.name;
+  }
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = suggestedName;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(link.href), 10000);
+  return suggestedName;
 }
 
 // Some handles (like the browser's private storage, used in tests) have no permission methods.

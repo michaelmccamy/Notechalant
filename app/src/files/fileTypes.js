@@ -172,3 +172,112 @@ export function fitPage(pageWidth, pageHeight, areaWidth, areaHeight, margin, ma
 function round(value) {
   return Math.round(value * 10) / 10;
 }
+
+// ---- Saving a copy with the ink on it ----
+
+// What a saved copy is written as. A PDF stays a PDF with the ink added as vector strokes.
+// Images stay images (SVG and the rarer formats become PNG). Everything else that has pages
+// (Word, Excel, PowerPoint, text) becomes a PDF of the pages as shown, since there's no way to
+// put handwriting back into those formats where it was written.
+export function copyFormat(name) {
+  const kind = kindOf(name);
+  const ext = extensionOf(name);
+  if (kind === 'image') {
+    if (ext === 'jpg' || ext === 'jpeg') return { extension: ext, mime: 'image/jpeg' };
+    if (ext === 'webp') return { extension: 'webp', mime: 'image/webp' };
+    return { extension: 'png', mime: 'image/png' };
+  }
+  return { extension: 'pdf', mime: 'application/pdf' };
+}
+
+// "report.docx" saved as a PDF becomes "report-annotated.pdf", or "report-annotated-2.pdf"
+// and so on if that's taken. `taken(name)` says whether a name is already used. Never returns
+// the original name, so a copy can't replace the file it came from.
+export function copyName(name, extension, taken) {
+  const dot = name.lastIndexOf('.');
+  const base = dot <= 0 ? name : name.slice(0, dot);
+  for (let n = 1; ; n++) {
+    const candidate = base + (n === 1 ? '-annotated' : '-annotated-' + n) + '.' + extension;
+    if (candidate !== name && !taken(candidate)) {
+      return candidate;
+    }
+  }
+}
+
+// The transform PDF.js uses to show a page (its PageViewport), from PDF user space to page
+// units. `view` is the visible box [x1, y1, x2, y2] in points and `rotation` the page's /Rotate.
+// Returned as [a, b, c, d, e, f]: x' = a*x + c*y + e, y' = b*x + d*y + f.
+export function pdfViewTransform(view, rotation, scale) {
+  const centerX = (view[2] + view[0]) / 2;
+  const centerY = (view[3] + view[1]) / 2;
+  let a, b, c, d;
+  switch (((rotation % 360) + 360) % 360) {
+    case 90:
+      [a, b, c, d] = [0, 1, 1, 0];
+      break;
+    case 180:
+      [a, b, c, d] = [-1, 0, 0, 1];
+      break;
+    case 270:
+      [a, b, c, d] = [0, -1, -1, 0];
+      break;
+    default:
+      [a, b, c, d] = [1, 0, 0, -1];
+  }
+  const offsetX = (a === 0 ? Math.abs(centerY - view[1]) : Math.abs(centerX - view[0])) * scale;
+  const offsetY = (a === 0 ? Math.abs(centerX - view[0]) : Math.abs(centerY - view[1])) * scale;
+  return [
+    a * scale,
+    b * scale,
+    c * scale,
+    d * scale,
+    offsetX - a * scale * centerX - c * scale * centerY,
+    offsetY - b * scale * centerX - d * scale * centerY,
+  ];
+}
+
+// Maps a point back through a pdfViewTransform: page units to PDF user space.
+export function invertPoint(m, x, y) {
+  const det = m[0] * m[3] - m[1] * m[2];
+  const dx = x - m[4];
+  const dy = y - m[5];
+  return { x: (m[3] * dx - m[2] * dy) / det, y: (m[0] * dy - m[1] * dx) / det };
+}
+
+// A stroke's outline the way the canvas draws it (drawStroke in inkCanvas.js): quadratic curves
+// through the midpoints between points, ending in a straight line. The quadratics become cubics,
+// since PDF only has cubic curves. Returns [{ op: 'move' | 'line' | 'curve', points }].
+export function strokePath(points) {
+  const path = [{ op: 'move', points: [points[0]] }];
+  if (points.length === 1) {
+    // A zero-length line with round caps draws as a dot.
+    path.push({ op: 'line', points: [points[0]] });
+    return path;
+  }
+  let from = points[0];
+  for (let i = 1; i < points.length - 1; i++) {
+    const control = points[i];
+    const to = { x: (points[i].x + points[i + 1].x) / 2, y: (points[i].y + points[i + 1].y) / 2 };
+    path.push({
+      op: 'curve',
+      points: [
+        { x: from.x + ((control.x - from.x) * 2) / 3, y: from.y + ((control.y - from.y) * 2) / 3 },
+        { x: to.x + ((control.x - to.x) * 2) / 3, y: to.y + ((control.y - to.y) * 2) / 3 },
+        to,
+      ],
+    });
+    from = to;
+  }
+  path.push({ op: 'line', points: [points[points.length - 1]] });
+  return path;
+}
+
+// '#2f6fed' to { r, g, b } between 0 and 1. Anything unreadable comes out black.
+export function hexToRgb(hex) {
+  const match = /^#?([0-9a-f]{6})$/i.exec(String(hex).trim());
+  if (!match) {
+    return { r: 0, g: 0, b: 0 };
+  }
+  const value = parseInt(match[1], 16);
+  return { r: ((value >> 16) & 255) / 255, g: ((value >> 8) & 255) / 255, b: (value & 255) / 255 };
+}

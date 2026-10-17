@@ -16,6 +16,7 @@ export function createToolbar(handlers) {
     relay: document.getElementById('connect-relay'),
     undo: document.getElementById('undo'),
     clear: document.getElementById('clear'),
+    saveCopy: document.getElementById('save-copy'),
     recognize: document.getElementById('recognize'),
     serial: document.getElementById('connect-serial'),
     wifi: document.getElementById('connect-wifi'),
@@ -45,6 +46,7 @@ export function createToolbar(handlers) {
 
   buttons.undo.addEventListener('click', handlers.onUndo);
   buttons.clear.addEventListener('click', handlers.onClear);
+  buttons.saveCopy.addEventListener('click', handlers.onSaveCopy);
   buttons.recognize.addEventListener('click', handlers.onRecognize);
   buttons.relay.addEventListener('click', handlers.onRelay);
   buttons.serial.addEventListener('click', handlers.onSerial);
@@ -101,6 +103,11 @@ export function createToolbar(handlers) {
     buttons.recognize.textContent = isBusy ? 'Reading…' : 'Recognize';
   }
 
+  function setSavingCopy(isBusy) {
+    buttons.saveCopy.disabled = isBusy;
+    buttons.saveCopy.textContent = isBusy ? 'Saving…' : 'Save copy';
+  }
+
   function showResult(text) {
     resultText.textContent = text;
     resultEl.hidden = false;
@@ -110,5 +117,5 @@ export function createToolbar(handlers) {
     resultEl.hidden = true;
   }
 
-  return { setStatus, setActiveSource, setRelayStatus, setRecognizing, showResult, hideResult, buttons };
+  return { setStatus, setActiveSource, setRelayStatus, setRecognizing, setSavingCopy, showResult, hideResult, buttons };
 }

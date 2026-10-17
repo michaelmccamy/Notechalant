@@ -415,6 +415,21 @@ button:disabled {
   pointer-events: none;
 }
 
+/* Where pages are drawn while a copy is saved. Kept off screen but not hidden, because the
+   picture of the page copies its styles and a hidden page would come out blank. */
+.copy-host {
+  position: fixed;
+  left: -100000px;
+  top: 0;
+  pointer-events: none;
+}
+
+.copy-page {
+  position: relative;
+  overflow: hidden;
+  background: #fff;
+}
+
 .page-slice {
   position: absolute;
   left: 0;
