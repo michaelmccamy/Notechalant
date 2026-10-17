@@ -1,0 +1,12 @@
+{
+  "name": "notechalant-server",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20.12"
+  },
+  "scripts": {
+    "start": "node index.mjs"
+  }
+}
