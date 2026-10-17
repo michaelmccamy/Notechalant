@@ -1,6 +1,9 @@
 // Turns a file into pages you can write on. Every document has the same shape:
 //
-//   { name, path, pageCount, pageSize(i) -> { width, height }, renderPage(i, el, scale), dispose(), message }
+//   { name, path, file, kind, pageCount, pageSize(i) -> { width, height }, renderPage(i, el, scale), dispose(), message }
+//
+// `file` is the original File (null for the whiteboard) and `kind` is from kindOf. Saving a copy
+// with the ink on it reads both.
 //
 // Page sizes are in "page units" (pixels at 100% zoom). Ink is saved in page units, so it stays on
 // the same spot of the page whatever size the window is. renderPage draws into `el`, which is
@@ -35,6 +38,8 @@ export function createWhiteboard() {
   return {
     name: 'Whiteboard',
     path: null,
+    file: null,
+    kind: 'whiteboard',
     pageCount: 1,
     pageSize: function () {
       return WHITEBOARD;
@@ -47,7 +52,13 @@ export function createWhiteboard() {
 
 // file is a File (from a FileSystemFileHandle). path is its path inside the opened folder.
 export async function openDocument(file, path) {
-  const kind = kindOf(file.name);
+  const doc = await openKind(file, path, kindOf(file.name));
+  doc.file = file;
+  doc.kind = kindOf(file.name);
+  return doc;
+}
+
+async function openKind(file, path, kind) {
   if (kind === 'image') {
     return openImage(file, path);
   }

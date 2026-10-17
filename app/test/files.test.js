@@ -15,6 +15,12 @@ import {
   PDF_POINTS_TO_PAGE_UNITS,
   renderResolution,
   pageBreaks,
+  copyFormat,
+  copyName,
+  pdfViewTransform,
+  invertPoint,
+  strokePath,
+  hexToRgb,
 } from '../src/files/fileTypes.js';
 
 test('pageBreaks moves a paragraph that does not fit to the next page whole', function () {
@@ -118,4 +124,57 @@ test('fitPage centers the page inside the margin and caps upscaling', function (
   assert.equal(fit.top, 24);
   // A 100px icon would fill the area but stops at 4x.
   assert.equal(fitPage(100, 100, 1200, 800, 24, 4).scale, 4);
+});
+
+test('copyFormat keeps PDFs and images, and turns other documents into PDFs', function () {
+  assert.equal(copyFormat('a.pdf').extension, 'pdf');
+  assert.equal(copyFormat('a.JPG').mime, 'image/jpeg');
+  assert.equal(copyFormat('a.png').extension, 'png');
+  assert.equal(copyFormat('a.svg').extension, 'png');
+  assert.equal(copyFormat('a.docx').extension, 'pdf');
+  assert.equal(copyFormat('notes.txt').extension, 'pdf');
+});
+
+test('copyName adds -annotated and counts up past names already used', function () {
+  const none = () => false;
+  assert.equal(copyName('report.docx', 'pdf', none), 'report-annotated.pdf');
+  assert.equal(copyName('Makefile', 'pdf', none), 'Makefile-annotated.pdf');
+  const used = new Set(['scan-annotated.png', 'scan-annotated-2.png']);
+  assert.equal(copyName('scan.png', 'png', (n) => used.has(n)), 'scan-annotated-3.png');
+});
+
+test('pdfViewTransform matches PDF.js on an unrotated letter page', function () {
+  const m = pdfViewTransform([0, 0, 612, 792], 0, PDF_POINTS_TO_PAGE_UNITS);
+  // The top left of the shown page is (0, 792) in PDF space, and the bottom right is (612, 0).
+  const topLeft = invertPoint(m, 0, 0);
+  const bottomRight = invertPoint(m, 816, 1056);
+  assert.ok(Math.abs(topLeft.x) < 1e-9 && Math.abs(topLeft.y - 792) < 1e-9);
+  assert.ok(Math.abs(bottomRight.x - 612) < 1e-9 && Math.abs(bottomRight.y) < 1e-9);
+});
+
+test('pdfViewTransform round trips on rotated pages with an offset crop box', function () {
+  const view = [36, 18, 576, 774];
+  for (const rotation of [0, 90, 180, 270, -90]) {
+    const m = pdfViewTransform(view, rotation, 2);
+    const shown = { x: m[0] * 100 + m[2] * 200 + m[4], y: m[1] * 100 + m[3] * 200 + m[5] };
+    const back = invertPoint(m, shown.x, shown.y);
+    assert.ok(Math.abs(back.x - 100) < 1e-9 && Math.abs(back.y - 200) < 1e-9, 'rotation ' + rotation);
+    // The crop box's corner lands on a corner of the shown page, never off it.
+    const corner = { x: m[0] * 36 + m[2] * 18 + m[4], y: m[1] * 36 + m[3] * 18 + m[5] };
+    assert.ok(corner.x > -1e-9 && corner.y > -1e-9, 'rotation ' + rotation);
+  }
+});
+
+test('strokePath curves through midpoints and ends on the last point', function () {
+  const path = strokePath([{ x: 0, y: 0 }, { x: 3, y: 0 }, { x: 6, y: 3 }]);
+  assert.deepEqual(path.map((s) => s.op), ['move', 'curve', 'line']);
+  assert.deepEqual(path[1].points[0], { x: 2, y: 0 });
+  assert.deepEqual(path[1].points[2], { x: 4.5, y: 1.5 });
+  assert.deepEqual(path[2].points[0], { x: 6, y: 3 });
+  assert.deepEqual(strokePath([{ x: 1, y: 1 }]).map((s) => s.op), ['move', 'line']);
+});
+
+test('hexToRgb reads pen colors', function () {
+  assert.deepEqual(hexToRgb('#ff0000'), { r: 1, g: 0, b: 0 });
+  assert.deepEqual(hexToRgb('nope'), { r: 0, g: 0, b: 0 });
 });

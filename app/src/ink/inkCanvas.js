@@ -232,8 +232,9 @@ export function createInkCanvas(canvas) {
 }
 
 // Draws a smooth curve through the points by using each point as a control
-// point and the midpoints between neighbors as the curve's endpoints.
-function drawStroke(ctx, stroke) {
+// point and the midpoints between neighbors as the curve's endpoints. Saved copies draw ink
+// with this too, so they match the screen.
+export function drawStroke(ctx, stroke) {
   const points = stroke.points;
   ctx.strokeStyle = stroke.color;
   ctx.fillStyle = stroke.color;
