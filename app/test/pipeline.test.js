@@ -38,10 +38,10 @@ test('synthetic recording parses completely', function () {
   assert.equal(samples.length, lineCount);
 });
 
-test('motion placeholder retraces the synthetic circle once bias is removed', function () {
+test('motion calibrates out the gyro bias and retraces the synthetic circle', function () {
   const samples = parseRecording(readFileSync(recordingPath, 'utf8'));
-  const motion = createMotion();
-  const bias = { gy: -0.4, gz: 0.6 }; // matches tools/make-synthetic.mjs
+  // The generator maps x to gz and y to -gy, the old single axis setup, not the real pen's angle.
+  const motion = createMotion({ xVector: [0, 0, 1], yVector: [0, -1, 0] });
 
   let x = 0;
   let y = 0;
@@ -51,9 +51,7 @@ test('motion placeholder retraces the synthetic circle once bias is removed', fu
   let wasDown = false;
 
   for (let i = 0; i < samples.length; i++) {
-    const s = Object.assign({}, samples[i]);
-    s.gy -= bias.gy;
-    s.gz -= bias.gz;
+    const s = samples[i];
     const move = motion.update(s);
     x += move.dx;
     y += move.dy;
