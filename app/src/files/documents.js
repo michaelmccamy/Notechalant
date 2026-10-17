@@ -15,6 +15,13 @@ import {
   PDF_POINTS_TO_PAGE_UNITS,
   renderResolution,
 } from './fileTypes.js';
+import { openDocx, openXlsx, openPptx } from './officeDocuments.js';
+
+const OFFICE_OPENERS = {
+  docx: { open: openDocx, label: 'Word document' },
+  xlsx: { open: openXlsx, label: 'spreadsheet' },
+  pptx: { open: openPptx, label: 'presentation' },
+};
 
 // Text files are laid out on US Letter pages at 96 dpi.
 const TEXT_PAGE = { width: 816, height: 1056, padding: 56, fontSize: 15, lineHeight: 22 };
@@ -47,8 +54,17 @@ export async function openDocument(file, path) {
   if (kind === 'pdf') {
     return openPdf(file, path);
   }
+  if (OFFICE_OPENERS[kind]) {
+    try {
+      const doc = await OFFICE_OPENERS[kind].open(file, path);
+      return doc.pageCount > 0 ? doc : unsupported(file, path, 'This ' + OFFICE_OPENERS[kind].label + ' is empty.');
+    } catch (err) {
+      console.warn("Couldn't read " + file.name, err);
+      return unsupported(file, path, 'This ' + OFFICE_OPENERS[kind].label + " couldn't be read. Saving it as a PDF and opening that will work.");
+    }
+  }
   if (kind === 'office') {
-    return unsupported(file, path, "Word, PowerPoint, and Excel files can't be shown in the browser. Save it as a PDF and open that.");
+    return unsupported(file, path, 'This older file format can\'t be shown. Save it as .docx, .pptx, .xlsx, or PDF and open that.');
   }
   if (file.size > MAX_TEXT_BYTES) {
     return unsupported(file, path, 'This file is too large to open as text.');

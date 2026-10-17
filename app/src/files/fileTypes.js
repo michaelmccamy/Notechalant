@@ -1,20 +1,44 @@
 // Pure helpers for opening files. No DOM or file system in here, so it all runs under `npm test`.
 
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'];
-const OFFICE_EXTENSIONS = ['doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'odt', 'odp', 'pages', 'key', 'numbers'];
+// Old binary Office formats and other suites. No browser renderer reads these.
+const OTHER_OFFICE_EXTENSIONS = ['doc', 'ppt', 'xls', 'odt', 'odp', 'ods', 'pages', 'key', 'numbers', 'rtf'];
+
+// Everything the Open File picker offers.
+export const OPENABLE_EXTENSIONS = ['pdf', 'docx', 'pptx', 'xlsx', 'txt', 'md', 'csv', 'json', ...IMAGE_EXTENSIONS];
 
 export function extensionOf(name) {
   const dot = name.lastIndexOf('.');
   return dot <= 0 ? '' : name.slice(dot + 1).toLowerCase();
 }
 
-// 'image', 'pdf', 'office', or 'other'. 'other' gets opened as text if it looks like text.
+// 'image', 'pdf', 'docx', 'xlsx', 'pptx', 'office' (formats we can't show), or 'other'.
+// 'other' gets opened as text if it looks like text.
 export function kindOf(name) {
   const ext = extensionOf(name);
   if (IMAGE_EXTENSIONS.includes(ext)) return 'image';
-  if (ext === 'pdf') return 'pdf';
-  if (OFFICE_EXTENSIONS.includes(ext)) return 'office';
+  if (ext === 'pdf' || ext === 'docx' || ext === 'xlsx' || ext === 'pptx') return ext;
+  if (OTHER_OFFICE_EXTENSIONS.includes(ext)) return 'office';
   return 'other';
+}
+
+// Where to start each page when laying tall content (a Word section, a spreadsheet) onto
+// fixed-height pages. `blocks` are the pieces that shouldn't be cut ({ top, bottom }, sorted by
+// top), such as paragraphs and table rows. Each page holds `available` units of content
+// starting at its start. A block that doesn't fit moves to the next page whole, and only a block
+// taller than a page gets cut. Returns the start of every page, the first being `firstTop`.
+export function pageBreaks(blocks, firstTop, available) {
+  const starts = [firstTop];
+  let start = firstTop;
+  let limit = firstTop + available;
+  for (const block of blocks) {
+    while (block.bottom > limit + 0.5) {
+      start = block.top > start ? block.top : limit;
+      limit = start + available;
+      starts.push(start);
+    }
+  }
+  return starts;
 }
 
 // A NUL character in the first few KB means binary. Text files essentially never have one.

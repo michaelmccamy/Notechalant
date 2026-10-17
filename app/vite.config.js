@@ -8,4 +8,9 @@ export default defineConfig({
       '/api': 'http://localhost:8787',
     },
   },
+  build: {
+    // PDF.js and the PowerPoint renderer are over 1 MB, but each loads only when a file of that
+    // kind is first opened, so the size doesn't slow the app's first load.
+    chunkSizeWarningLimit: 1500,
+  },
 });
