@@ -5,10 +5,15 @@ const PROMPT = [
   'This image is handwriting drawn in the air with a motion-tracking pen, so letters may be shaky or uneven.',
   'Transcribe exactly what is written.',
   'If it is a math expression or equation, give it as LaTeX on the first line, then the solution or simplified result on the next line.',
+  'If there is no handwriting, return exactly: (nothing recognized)',
   'Return only the transcription, with no commentary.',
 ].join(' ');
 
 const PNG_PREFIX = 'data:image/png;base64,';
+// Most answers take about a second, but now and then one stalls for 30s or more.
+// Giving up and asking again is much faster than waiting it out.
+const TIMEOUT_MS = 8000;
+const ATTEMPTS = 2;
 
 export function hasConfig(env) {
   return Boolean(env.GEMINI_API_KEY && env.GEMINI_MODEL);
@@ -54,10 +59,18 @@ async function callGemini(base64Png, env) {
   };
 
   let response;
-  try {
-    response = await fetch(url, request);
-  } catch (err) {
-    throw new Error('Could not reach Gemini. Check the internet connection');
+  for (let attempt = 1; response === undefined; attempt++) {
+    try {
+      response = await fetch(url, Object.assign({ signal: AbortSignal.timeout(TIMEOUT_MS) }, request));
+    } catch (err) {
+      if (err.name !== 'TimeoutError') {
+        throw new Error('Could not reach Gemini. Check the internet connection');
+      }
+      if (attempt === ATTEMPTS) {
+        throw new Error('Gemini took too long to answer. Try again');
+      }
+      console.log('Gemini timed out, retrying');
+    }
   }
 
   const data = await response.json().catch(function () {
