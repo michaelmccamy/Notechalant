@@ -132,7 +132,7 @@ button:disabled {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 250px minmax(0, 1fr);
+  grid-template-columns: 250px minmax(0, 1fr) 320px;
 }
 
 .icon-button {
@@ -539,36 +539,196 @@ button:disabled {
   color: var(--warn);
 }
 
-.result {
-  position: absolute;
-  right: 16px;
-  bottom: 16px;
-  width: min(420px, calc(100% - 32px));
+/* Notes panel on the right. */
+.notes {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  border-left: 1px solid var(--border);
 }
 
-.result-head {
+body.notes-hidden .workspace {
+  grid-template-columns: 250px minmax(0, 1fr);
+}
+
+body.notes-hidden .notes {
+  display: none;
+}
+
+.notes-head {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  gap: 4px;
+  padding: 8px 8px 4px 14px;
+}
+
+.notes-file {
+  padding: 2px 14px 8px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   border-bottom: 1px solid var(--border);
+}
+
+.notes-blocks {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 8px 24px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.notes-empty {
+  margin: 4px 6px 8px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.notes-hint {
+  font-size: 12px;
+}
+
+.note-block {
+  position: relative;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  margin: 2px 0;
+  padding: 6px 28px 6px 6px;
+  border-left: 3px solid transparent;
+  border-radius: 6px;
+}
+
+.note-block:hover {
+  background: #f4f4f1;
+}
+
+.note-block.on-page {
+  border-left-color: var(--accent);
+}
+
+.note-page {
+  flex: none;
+  padding: 0 6px;
+  margin-top: 2px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 18px;
   color: var(--muted);
 }
 
-.result-head button {
-  border: none;
-  padding: 2px 8px;
-  font-size: 18px;
+.note-body {
+  flex: 1;
+  min-width: 0;
+  cursor: text;
+  overflow-wrap: anywhere;
 }
 
-.result pre {
-  margin: 0;
-  padding: 12px;
+.note-body > :first-child {
+  margin-top: 0;
+}
+
+.note-body > :last-child {
+  margin-bottom: 0;
+}
+
+.note-body p {
+  margin: 0 0 6px;
   white-space: pre-wrap;
-  font-size: 18px;
-  font-family: inherit;
+}
+
+.note-body h3,
+.note-body h4,
+.note-body h5 {
+  margin: 2px 0 6px;
+  line-height: 1.25;
+}
+
+.note-body ul,
+.note-body ol {
+  margin: 0 0 6px;
+  padding-left: 20px;
+}
+
+.note-body .katex-display {
+  margin: 4px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.note-editor {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 4px 6px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  resize: none;
+  overflow: hidden;
+}
+
+.note-delete {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  opacity: 0;
+}
+
+.note-block:hover .note-delete,
+.note-delete:focus {
+  opacity: 1;
+}
+
+.note-block.fresh {
+  animation: note-fresh 1.6s ease-out;
+}
+
+@keyframes note-fresh {
+  from {
+    background: #fff4c2;
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.note-block.pending {
+  display: block;
+  color: var(--muted);
+  font-style: italic;
+  animation: note-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes note-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+/* Narrow screens: slimmer side columns, so the page keeps room to write on. */
+@media (max-width: 1100px) {
+  .workspace {
+    grid-template-columns: 190px minmax(0, 1fr) 260px;
+  }
+  body.notes-hidden .workspace {
+    grid-template-columns: 190px minmax(0, 1fr);
+  }
 }
