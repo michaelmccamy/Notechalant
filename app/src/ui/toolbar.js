@@ -6,6 +6,12 @@ const COLOR_NAMES = ['Black', 'Blue', 'Red', 'Green', 'Orange'];
 const SIZES = [2, 4, 8, 14];
 const SIZE_NAMES = ['Fine', 'Medium', 'Thick', 'Marker'];
 
+// Buttons hold an icon and a .label span. Changing only the label keeps the icon.
+function setLabel(button, text) {
+  const label = button.querySelector('.label');
+  (label || button).textContent = text;
+}
+
 export function createToolbar(handlers) {
   const statusEl = document.getElementById('status');
   const colorsEl = document.getElementById('colors');
@@ -36,8 +42,10 @@ export function createToolbar(handlers) {
   for (let i = 0; i < COLORS.length; i++) {
     const swatch = document.createElement('button');
     swatch.className = 'swatch';
-    swatch.style.background = COLORS[i];
-    swatch.title = COLOR_NAMES[i];
+    // The stylesheet draws the dot and the selected ring from --ink.
+    swatch.style.setProperty('--ink', COLORS[i]);
+    swatch.title = COLOR_NAMES[i] + ' pen';
+    swatch.setAttribute('aria-label', COLOR_NAMES[i] + ' pen');
     swatch.addEventListener('click', function () {
       useColor(i);
     });
@@ -51,6 +59,7 @@ export function createToolbar(handlers) {
     colorIndex = index;
     for (let i = 0; i < swatches.length; i++) {
       swatches[i].classList.toggle('selected', i === index);
+      swatches[i].setAttribute('aria-pressed', String(i === index));
     }
   }
   selectColor(0);
@@ -124,17 +133,19 @@ export function createToolbar(handlers) {
   }
 
   // source is 'relay', 'bluetooth', 'serial', 'wifi', 'recording', or null.
+  // The connection buttons keep their names; the filled one is the source that's on.
   function setActiveSource(source) {
-    buttons.relay.classList.toggle('active', source === 'relay');
-    buttons.bluetooth.classList.toggle('active', source === 'bluetooth');
-    buttons.serial.classList.toggle('active', source === 'serial');
-    buttons.wifi.classList.toggle('active', source === 'wifi');
+    for (const [name, btn] of [
+      ['relay', buttons.relay],
+      ['bluetooth', buttons.bluetooth],
+      ['serial', buttons.serial],
+      ['wifi', buttons.wifi],
+    ]) {
+      btn.classList.toggle('active', source === name);
+      btn.setAttribute('aria-pressed', String(source === name));
+    }
     buttons.recording.classList.toggle('active', source === 'recording');
-    buttons.relay.textContent = source === 'relay' ? 'Relay on' : 'Relay';
-    buttons.bluetooth.textContent = source === 'bluetooth' ? 'Bluetooth on' : 'Bluetooth';
-    buttons.serial.textContent = source === 'serial' ? 'USB on' : 'USB';
-    buttons.wifi.textContent = source === 'wifi' ? 'WiFi on' : 'WiFi';
-    buttons.recording.textContent = source === 'recording' ? 'Stop replay' : 'Load recording';
+    setLabel(buttons.recording, source === 'recording' ? 'Stop replay' : 'Load recording');
     if (source !== 'relay') {
       relayIndicators.hidden = true;
     }
@@ -162,12 +173,12 @@ export function createToolbar(handlers) {
 
   function setTranscribing(isBusy) {
     buttons.transcribe.disabled = isBusy;
-    buttons.transcribe.textContent = isBusy ? 'Reading…' : 'Transcribe';
+    setLabel(buttons.transcribe, isBusy ? 'Reading…' : 'Transcribe');
   }
 
   function setSavingCopy(isBusy) {
     buttons.saveCopy.disabled = isBusy;
-    buttons.saveCopy.textContent = isBusy ? 'Saving…' : 'Save copy';
+    setLabel(buttons.saveCopy, isBusy ? 'Saving…' : 'Save copy');
   }
 
   function setAuto(isOn) {
@@ -177,7 +188,8 @@ export function createToolbar(handlers) {
   // The remote is its own connection, so it can be on at the same time as a pen source.
   function setRemoteOn(isOn) {
     buttons.remote.classList.toggle('active', isOn);
-    buttons.remote.textContent = isOn ? 'Remote on' : 'Remote';
+    buttons.remote.setAttribute('aria-pressed', String(isOn));
+    setLabel(buttons.remote, isOn ? 'Remote on' : 'Remote');
   }
 
   function setNotesShown(isShown) {
