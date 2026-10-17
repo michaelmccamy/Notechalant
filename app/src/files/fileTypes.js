@@ -121,6 +121,18 @@ export function scaleStrokes(strokes, factor) {
   });
 }
 
+// PDF sizes are in points (1/72 inch). Page units are CSS pixels (1/96 inch), so a letter
+// page comes out 816 x 1056, the same as a text page.
+export const PDF_POINTS_TO_PAGE_UNITS = 96 / 72;
+
+// How many canvas pixels per page unit to render a PDF page at. Sharp at the shown size on
+// high-DPI screens, never below 1, and capped so a poster-sized page can't eat all the memory.
+export function renderResolution(pageWidth, pageHeight, shownScale, devicePixelRatio, maxPixels) {
+  const wanted = Math.max(1, shownScale) * (devicePixelRatio || 1);
+  const cap = Math.sqrt(maxPixels / (pageWidth * pageHeight));
+  return Math.min(wanted, cap);
+}
+
 // Fits a page inside the available area with a margin, centered. Small pages are scaled up
 // (to a limit) so there's room to write on them.
 export function fitPage(pageWidth, pageHeight, areaWidth, areaHeight, margin, maxScale) {

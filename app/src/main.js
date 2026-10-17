@@ -156,6 +156,7 @@ async function openFile(handle, path) {
   }
   opening.add(path);
   const openedFrom = folder;
+  toolbar.setStatus('Opening ' + path + '…');
   try {
     const doc = await openDocument(await handle.getFile(), path);
     const savedInk = await openedFrom.loadInk(path);
@@ -166,6 +167,7 @@ async function openFile(handle, path) {
     const tab = { id: 'file:' + path, name: doc.name, path: path, doc: doc, page: 0, ink: savedInk, dirty: false };
     tabs.splice(tabs.indexOf(activeTab) + 1, 0, tab);
     activate(tab);
+    toolbar.setStatus(doc.pageCount > 1 ? 'Opened ' + doc.name + '. Page Up and Page Down change pages' : 'Opened ' + doc.name);
   } catch (err) {
     toolbar.setStatus("Couldn't open " + path + ': ' + err.message, true);
   } finally {
