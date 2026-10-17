@@ -27,6 +27,7 @@
 
       <div class="group">
         <button id="connect-relay" title="Receive the pen through the laptop relay (npm run relay)">Relay</button>
+        <button id="connect-bluetooth" title="Connect to the pen over Bluetooth (Chrome or Edge)">Bluetooth</button>
         <button id="connect-serial" title="Connect over USB (Chrome or Edge)">USB</button>
         <button id="connect-wifi" title="Fallback: connect straight to a pen hosting its own WebSocket server">WiFi</button>
         <button id="load-recording" title="Replay a recorded .jsonl file">Load recording</button>
@@ -36,6 +37,10 @@
       <div class="group" id="relay-indicators" hidden>
         <span class="indicator" id="relay-indicator">Relay: not connected</span>
         <span class="indicator" id="pen-indicator">Pen: offline</span>
+      </div>
+
+      <div class="group" id="bluetooth-indicators" hidden>
+        <span class="indicator" id="bluetooth-pen-indicator">Pen: offline</span>
       </div>
 
       <div class="status" id="status">Mouse ready</div>

@@ -10,9 +10,12 @@ export function createToolbar(handlers) {
   const relayIndicators = document.getElementById('relay-indicators');
   const relayIndicator = document.getElementById('relay-indicator');
   const penIndicator = document.getElementById('pen-indicator');
+  const bluetoothIndicators = document.getElementById('bluetooth-indicators');
+  const bluetoothPenIndicator = document.getElementById('bluetooth-pen-indicator');
 
   const buttons = {
     relay: document.getElementById('connect-relay'),
+    bluetooth: document.getElementById('connect-bluetooth'),
     undo: document.getElementById('undo'),
     clear: document.getElementById('clear'),
     saveCopy: document.getElementById('save-copy'),
@@ -53,6 +56,7 @@ export function createToolbar(handlers) {
     handlers.onAutoChange(autoInput.checked);
   });
   buttons.relay.addEventListener('click', handlers.onRelay);
+  buttons.bluetooth.addEventListener('click', handlers.onBluetooth);
   buttons.serial.addEventListener('click', handlers.onSerial);
   buttons.wifi.addEventListener('click', handlers.onWifi);
   buttons.recording.addEventListener('click', function () {
@@ -75,18 +79,23 @@ export function createToolbar(handlers) {
     statusEl.classList.toggle('error', Boolean(isError));
   }
 
-  // source is 'relay', 'serial', 'wifi', 'recording', or null.
+  // source is 'relay', 'bluetooth', 'serial', 'wifi', 'recording', or null.
   function setActiveSource(source) {
     buttons.relay.classList.toggle('active', source === 'relay');
+    buttons.bluetooth.classList.toggle('active', source === 'bluetooth');
     buttons.serial.classList.toggle('active', source === 'serial');
     buttons.wifi.classList.toggle('active', source === 'wifi');
     buttons.recording.classList.toggle('active', source === 'recording');
     buttons.relay.textContent = source === 'relay' ? 'Relay on' : 'Relay';
+    buttons.bluetooth.textContent = source === 'bluetooth' ? 'Bluetooth on' : 'Bluetooth';
     buttons.serial.textContent = source === 'serial' ? 'USB on' : 'USB';
     buttons.wifi.textContent = source === 'wifi' ? 'WiFi on' : 'WiFi';
     buttons.recording.textContent = source === 'recording' ? 'Stop replay' : 'Load recording';
     if (source !== 'relay') {
       relayIndicators.hidden = true;
+    }
+    if (source !== 'bluetooth') {
+      bluetoothIndicators.hidden = true;
     }
   }
 
@@ -98,6 +107,13 @@ export function createToolbar(handlers) {
     const penOnline = status.relay && status.pens > 0;
     penIndicator.textContent = penOnline ? 'Pen: online, ' + status.rate + '/s' : 'Pen: offline';
     penIndicator.classList.toggle('ok', penOnline);
+  }
+
+  // status is { connected, rate } from connectBluetooth.
+  function setBluetoothStatus(status) {
+    bluetoothIndicators.hidden = false;
+    bluetoothPenIndicator.textContent = status.connected ? 'Pen: online, ' + status.rate + '/s' : 'Pen: reconnecting';
+    bluetoothPenIndicator.classList.toggle('ok', status.connected);
   }
 
   function setTranscribing(isBusy) {
@@ -119,5 +135,5 @@ export function createToolbar(handlers) {
     buttons.notes.setAttribute('aria-pressed', String(isShown));
   }
 
-  return { setStatus, setActiveSource, setRelayStatus, setTranscribing, setSavingCopy, setAuto, setNotesShown, buttons };
+  return { setStatus, setActiveSource, setRelayStatus, setBluetoothStatus, setTranscribing, setSavingCopy, setAuto, setNotesShown, buttons };
 }

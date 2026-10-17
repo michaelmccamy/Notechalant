@@ -1,6 +1,6 @@
 # ESP32 pen firmware
 
-Runs on a Seeed XIAO ESP32S3. It reads the MPU6050 and the button at 100 Hz and sends each sample in the format from `docs/data-format.md` two ways at once: over WiFi to the relay (`relay/relay.js`), and over USB serial as a fallback.
+Runs on a Seeed XIAO ESP32S3. It reads the MPU6050 and the button at 100 Hz and sends each sample in the format from `docs/data-format.md` over Bluetooth Low Energy and USB serial at once, and over WiFi to the relay (`relay/relay.js`) if a WiFi network is set.
 
 ## Wiring
 
@@ -24,7 +24,7 @@ cp secrets.example.h secrets.h
 
 Edit `secrets.h`:
 
-- `WIFI_SSID` and `WIFI_PASSWORD`: the network the laptop is on. Leave the SSID empty (`""`) for USB only.
+- `WIFI_SSID` and `WIFI_PASSWORD`: the network the laptop is on. Leave the SSID empty (`""`) for Bluetooth and USB only. That's the normal setup now.
 - `RELAY_HOST`: the laptop's IP. Start the relay (`cd relay && npm run relay`) and use the address on the `en0` line, or run `ipconfig getifaddr en0` on a Mac.
 
 `secrets.h` is gitignored, so each person keeps their own.
@@ -63,6 +63,15 @@ The serial monitor shows status lines first, then one JSON line per sample:
 ```
 Notechalant pen starting
 MPU6050 found (WHO_AM_I 0x68)
+No WiFi in secrets.h. Bluetooth and USB only
+Bluetooth advertising as "Notechalant Pen"
+Bluetooth connected
+{"t":3021,"gx":-0.31,"gy":0.42,"gz":0.18,"ax":0.01,"ay":-0.02,"az":0.99,"pen":0}
+```
+
+With WiFi set, you see this instead of the "No WiFi" line:
+
+```
 WiFi connecting to "your-network"
 WiFi connected. IP 192.168.1.40. Connecting to relay at 192.168.1.23:8080
 Relay connected: ws://192.168.1.23:8080/pen
@@ -73,7 +82,7 @@ Status lines never start with `{`, so the app skips them. The relay prints `Pen 
 
 | LED | Meaning |
 |---|---|
-| Blinking | Connecting to WiFi or the relay |
-| Solid | Sending to the relay |
+| Blinking | Advertising over Bluetooth, and not connected to the relay |
+| Solid | Connected over Bluetooth or to the relay |
 
-USB output keeps working whatever the LED shows, so the app's **USB** button is the fallback if WiFi fails.
+The pen advertises again on its own after the app disconnects. USB output keeps working whatever the LED shows, so the app's **USB** button is the fallback if wireless fails.

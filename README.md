@@ -5,7 +5,7 @@ Turn any screen into a whiteboard you can write on from anywhere in the room, fo
 A pen with a motion sensor streams its rotation to a laptop app. The app turns small wrist movements into a cursor, draws ink while the button is held, and turns the writing into typed text or math.
 
 ```
-MPU6050 -> XIAO ESP32-S3 -> WiFi (WebSocket) -> browser app -> recognition -> output
+MPU6050 -> XIAO ESP32-S3 -> Bluetooth LE -> browser app -> recognition -> output
 ```
 
 Built at SwampHacks XII.
@@ -16,7 +16,7 @@ Built at SwampHacks XII.
 |---|---|---|
 | `docs/data-format.md` | The sample format every part of the system agrees on | Everyone |
 | `firmware/stm32-test/` | Tonight's USB serial test on the STM32 | CpE 1 |
-| `firmware/esp32/` | WiFi and WebSocket firmware for the real pen | CpE 1 |
+| `firmware/esp32/` | Bluetooth, WiFi, and USB firmware for the real pen | CpE 1 |
 | `data/recordings/` | Recorded pen data (`.jsonl`) for testing without hardware | CpE 1 |
 | `app/src/motion/` | Gyro to cursor movement, calibration, smoothing | CpE 2 |
 | `app/src/` (everything else) | Canvas, inputs, slides, toolbar | CS |
@@ -49,6 +49,18 @@ npm start
 ```
 
 The app's dev server forwards `/api` requests to it on port 8787.
+
+### Running with Bluetooth
+
+This is the main wireless path. It needs no WiFi network, only the app.
+
+1. Flash `firmware/esp32` with `WIFI_SSID` set to `""` in `secrets.h` (see `firmware/esp32/README.md`). Power the pen from USB or a battery. Its LED blinks while it waits for the app.
+2. Open the app in Chrome or Edge and click **Bluetooth**. Pick **Notechalant Pen** in the chooser.
+3. The toolbar shows `Pen: online, ~100/s` and the LED goes solid. Hold the pen still for a moment to calibrate.
+
+If the pen loses power or goes out of range, the app reconnects to it on its own, without the chooser. Reloading the page means picking it again. Click **Bluetooth** again to turn it off.
+
+On a Mac, Chrome needs Bluetooth permission: **System Settings > Privacy & Security > Bluetooth**, turn on Google Chrome (or Edge), then quit and reopen the browser. Without it the chooser never finds the pen. The binary format and UUIDs are in `docs/data-format.md`.
 
 ### Running with the relay
 
@@ -86,6 +98,7 @@ All hardware inputs end up calling the same function, `onPenData(sample)`, in `a
 - **Mouse** draws directly on the canvas. Use it to test anything ink related.
 - **Load recording** replays a `.jsonl` file at real speed. This tests the full pipeline with no hardware.
 - **Relay** receives the pen through `relay/relay.js` and reconnects on its own. This is the main WiFi path.
+- **Bluetooth** connects to the pen over Bluetooth Low Energy and reconnects on its own. This is the main wireless path.
 - **USB** connects to the STM32 or ESP32 over Web Serial at 115200 baud.
 - **WiFi** connects straight to a WebSocket server on the ESP32. This is the fallback, if the pen hosts its own network.
 

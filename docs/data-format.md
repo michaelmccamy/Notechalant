@@ -26,11 +26,37 @@ If you change the sensor range in firmware, change the divisor to match.
 
 ## Transport
 
-- **WiFi through the relay (primary).** The ESP32 is a WebSocket *client*. It joins the same WiFi network as the laptop and connects to `ws://<laptop ip>:8080/pen`, where `relay/relay.js` is running. Each message holds one or more lines in the same format. The relay checks each line and forwards it to the browser at `ws://localhost:8080/app`, wrapped as `{"type":"sample", ...}`. When a pen connects or disconnects it also sends `{"type":"status","pens":N}`. The relay prints the exact pen URL when it starts.
+- **Bluetooth Low Energy (primary).** The ESP32 is a BLE peripheral and the browser connects to it with Web Bluetooth. Samples are packed binary, not JSON, to fit 100 a second into small packets. See the next section.
+- **WiFi through the relay.** The ESP32 is a WebSocket *client*. It joins the same WiFi network as the laptop and connects to `ws://<laptop ip>:8080/pen`, where `relay/relay.js` is running. Each message holds one or more lines in the same format. The relay checks each line and forwards it to the browser at `ws://localhost:8080/app`, wrapped as `{"type":"sample", ...}`. When a pen connects or disconnects it also sends `{"type":"status","pens":N}`. The relay prints the exact pen URL when it starts.
 - **USB serial** at 115200 baud. Firmware may print other text at boot. The app skips any line that isn't valid JSON with all eight fields.
 - **WiFi direct (fallback).** The ESP32 hosts its own network and a WebSocket server at `ws://192.168.4.1:81`, and the browser connects straight to it. Each message holds one or more lines in the same format.
 
-Why the relay is primary: with direct WiFi, the laptop has to join the pen's own network, so it loses internet and the recognition server can't reach Gemini. With the relay, the pen and laptop share the venue WiFi (or a phone hotspot) and the laptop stays online. The relay also lets the app reconnect on its own when the pen restarts.
+Why Bluetooth is primary: it needs no network at all, so venue WiFi, 5 GHz hotspots, and IP addresses don't matter, and the laptop stays on its normal internet for recognition. The relay is the WiFi option when the pen has to be farther away than Bluetooth reaches. Direct WiFi is a last resort: the laptop has to join the pen's own network, so it loses internet and the recognition server can't reach Gemini.
+
+## Bluetooth binary format
+
+| Name | UUID |
+|---|---|
+| Device name | `Notechalant Pen` |
+| Service | `4cc3af8c-894d-445a-bb7f-68e6168c437a` |
+| Samples characteristic (notify) | `78580580-0b8c-4764-951e-14f13c488905` |
+
+Each notification holds one or more 17-byte samples back to back, little endian:
+
+| Offset | Field | Type | Meaning |
+|---|---|---|---|
+| 0 | `t` | uint32 | Milliseconds since boot, same as JSON |
+| 4 | `gx` | int16 | Raw gyro counts. Divide by 131.0 for degrees per second |
+| 6 | `gy` | int16 | Same |
+| 8 | `gz` | int16 | Same |
+| 10 | `ax` | int16 | Raw accel counts. Divide by 16384.0 for g |
+| 12 | `ay` | int16 | Same |
+| 14 | `az` | int16 | Same |
+| 16 | `pen` | uint8 | `1` while pressed, `0` otherwise |
+
+The divisors are the same ones as in the scaling section above, so if the sensor range changes, change them in `app/src/input/bluetooth.js` too. The app decodes each sample into the same object the JSON inputs produce.
+
+The pen asks for a 247-byte MTU, so a notification can carry up to 14 samples. It sends one notification every 20 ms, usually 2 samples. If the connection ends up with a smaller MTU, it sends more notifications with fewer samples each. Bytes at the end that don't make a whole sample are ignored.
 
 ## Recording files
 

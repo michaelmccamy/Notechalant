@@ -1,13 +1,15 @@
 // Notechalant pen firmware for the Seeed XIAO ESP32S3.
 //
-// Reads the MPU6050 and the button at 100 Hz and sends each sample as one JSON line
-// (docs/data-format.md) two ways at once:
-//   - WebSocket client to the relay at ws://RELAY_HOST:8080/pen (relay/relay.js)
-//   - USB serial, so the app's USB input works with no WiFi
+// Reads the MPU6050 and the button at 100 Hz and sends each sample (docs/data-format.md)
+// up to three ways at once:
+//   - Bluetooth Low Energy notifications, packed binary, to the app's Bluetooth input
+//   - USB serial as JSON lines, so the app's USB input works with no wireless at all
+//   - WebSocket client to the relay at ws://RELAY_HOST:8080/pen (relay/relay.js), only if
+//     WIFI_SSID in secrets.h is set
 //
-// Sampling and USB run in loop() on core 1. WiFi and the WebSocket run in their own task
-// on core 0, because the WebSocket library blocks for up to 5 s while connecting to a
-// relay that doesn't answer. That way a wrong IP never stalls sampling or USB output.
+// Sampling and USB run in loop() on core 1. BLE and WiFi each run in their own task on
+// core 0, because the WebSocket library blocks for up to 5 s while connecting to a relay
+// that doesn't answer. That way a wrong IP never stalls sampling, USB, or Bluetooth.
 //
 // Status messages go to serial as whole lines that never start with "{", so the app's
 // parser skips them.
@@ -16,6 +18,8 @@
 #include <WiFi.h>
 #include <Wire.h>
 #include <WebSocketsClient.h>
+#include <BLEDevice.h>
+#include <BLEServer.h>
 
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -31,6 +35,12 @@ const int LED_PIN = LED_BUILTIN;  // GPIO21, lit when LOW
 const int LED_ON = LOW;
 const int LED_OFF = HIGH;
 
+// Bluetooth. The UUIDs must match app/src/input/bluetooth.js.
+const char *BLE_NAME = "Notechalant Pen";
+const char *BLE_SERVICE_UUID = "4cc3af8c-894d-445a-bb7f-68e6168c437a";
+const char *BLE_SAMPLES_UUID = "78580580-0b8c-4764-951e-14f13c488905";
+const uint16_t BLE_MTU = 247;  // largest notification is MTU - 3 = 244 bytes, 14 samples
+
 // Relay
 const uint16_t RELAY_PORT = 8080;
 const char *RELAY_PATH = "/pen";
@@ -41,6 +51,8 @@ const uint32_t DEBOUNCE_MS = 20;
 const uint32_t MPU_RETRY_MS = 2000;
 const uint32_t WIFI_RETRY_MS = 15000;
 const uint32_t BLINK_MS = 250;
+const uint32_t BLE_SEND_MS = 20;  // one notification per 20 ms, about 2 samples each
+const uint32_t BLE_READVERTISE_MS = 500;
 
 // MPU6050 registers. Ranges must match the divisors in docs/data-format.md.
 const uint8_t MPU_ADDR = 0x68;  // AD0 low or unconnected
@@ -56,7 +68,7 @@ const float ACCEL_LSB_PER_G = 16384.0;  // +-2 g
 
 // One JSON line, longest case is about 100 bytes.
 const size_t LINE_BYTES = 128;
-// Lines waiting for the network task. 50 is half a second of samples.
+// Samples waiting for the WiFi or BLE task. 50 is half a second of samples.
 const int QUEUE_LENGTH = 50;
 
 struct Line {
@@ -64,8 +76,22 @@ struct Line {
   uint16_t length;
 };
 
+// One sample in the BLE binary format from docs/data-format.md, little endian:
+// t uint32, gx gy gz ax ay az int16 (raw sensor counts), pen uint8.
+const size_t PACKED_BYTES = 17;
+
+struct Packed {
+  uint8_t bytes[PACKED_BYTES];
+};
+
+const bool wifiEnabled = strlen(WIFI_SSID) > 0;
+
 QueueHandle_t wifiQueue;
+QueueHandle_t bleQueue;
 SemaphoreHandle_t serialLock;
+
+volatile bool relayConnected = false;
+volatile bool bleConnected = false;
 
 bool mpuFound = false;
 uint32_t lastMpuAttemptMs = 0;
@@ -151,6 +177,17 @@ int16_t be16(const uint8_t *p) {
   return (int16_t)((p[0] << 8) | p[1]);
 }
 
+void putLe16(uint8_t *p, int16_t value) {
+  p[0] = (uint16_t)value & 0xFF;
+  p[1] = (uint16_t)value >> 8;
+}
+
+void putLe32(uint8_t *p, uint32_t value) {
+  for (int i = 0; i < 4; i++) {
+    p[i] = (value >> (8 * i)) & 0xFF;
+  }
+}
+
 // ---------- Button ----------
 
 // The pen state only changes once the raw reading has held for DEBOUNCE_MS,
@@ -206,14 +243,29 @@ void takeSample() {
   line.length = n;
 
   writeSerialLine(line.text, line.length);
-  // If the network task is behind, drop this sample for WiFi rather than wait.
-  xQueueSend(wifiQueue, &line, 0);
+  // If a network task is behind, drop this sample for it rather than wait.
+  if (wifiEnabled) {
+    xQueueSend(wifiQueue, &line, 0);
+  }
+
+  if (bleConnected) {
+    // BLE sends the raw counts. The app divides by the same constants as above.
+    Packed packed;
+    putLe32(packed.bytes + 0, nowMs);
+    putLe16(packed.bytes + 4, be16(raw + 8));    // gx
+    putLe16(packed.bytes + 6, be16(raw + 10));   // gy
+    putLe16(packed.bytes + 8, be16(raw + 12));   // gz
+    putLe16(packed.bytes + 10, be16(raw + 0));   // ax
+    putLe16(packed.bytes + 12, be16(raw + 2));   // ay
+    putLe16(packed.bytes + 14, be16(raw + 4));   // az
+    packed.bytes[16] = penState;
+    xQueueSend(bleQueue, &packed, 0);
+  }
 }
 
-// ---------- Network task (core 0) ----------
+// ---------- WiFi task (core 0) ----------
 
 WebSocketsClient webSocket;
-volatile bool relayConnected = false;
 
 void onWebSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
   if (type == WStype_CONNECTED) {
@@ -225,14 +277,6 @@ void onWebSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
       status("Relay disconnected. Retrying");
     }
     relayConnected = false;
-  }
-}
-
-void updateLed(uint32_t nowMs) {
-  if (relayConnected) {
-    digitalWrite(LED_PIN, LED_ON);
-  } else {
-    digitalWrite(LED_PIN, (nowMs / BLINK_MS) % 2 == 0 ? LED_ON : LED_OFF);
   }
 }
 
@@ -250,23 +294,19 @@ void sendQueuedLines() {
   }
 }
 
-void networkTask(void *unused) {
-  bool wifiEnabled = strlen(WIFI_SSID) > 0;
-  if (!wifiEnabled) {
-    status("No WiFi in secrets.h. USB only");
-  } else {
-    WiFi.mode(WIFI_STA);
-    WiFi.setSleep(false);  // power saving adds tens of ms of latency
-    WiFi.setAutoReconnect(true);
-    status("WiFi connecting to \"%s\"", WIFI_SSID);
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+// Only started when WIFI_SSID is set.
+void wifiTask(void *unused) {
+  WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);  // power saving adds tens of ms of latency
+  WiFi.setAutoReconnect(true);
+  status("WiFi connecting to \"%s\"", WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 
-    webSocket.begin(RELAY_HOST, RELAY_PORT, RELAY_PATH);
-    webSocket.onEvent(onWebSocketEvent);
-    webSocket.setReconnectInterval(2000);
-    // Notices a relay that vanished without closing (laptop asleep, out of range) in about 11 s.
-    webSocket.enableHeartbeat(5000, 3000, 2);
-  }
+  webSocket.begin(RELAY_HOST, RELAY_PORT, RELAY_PATH);
+  webSocket.onEvent(onWebSocketEvent);
+  webSocket.setReconnectInterval(2000);
+  // Notices a relay that vanished without closing (laptop asleep, out of range) in about 11 s.
+  webSocket.enableHeartbeat(5000, 3000, 2);
 
   bool wifiUp = false;
   uint32_t wifiAttemptMs = millis();
@@ -274,32 +314,130 @@ void networkTask(void *unused) {
   for (;;) {
     uint32_t nowMs = millis();
 
-    if (wifiEnabled) {
-      bool up = WiFi.status() == WL_CONNECTED;
-      if (up && !wifiUp) {
-        status("WiFi connected. IP %s. Connecting to relay at %s:%u",
-               WiFi.localIP().toString().c_str(), RELAY_HOST, RELAY_PORT);
-      } else if (!up && wifiUp) {
-        status("WiFi lost. Reconnecting");
-        relayConnected = false;
-        wifiAttemptMs = nowMs;
-      }
-      wifiUp = up;
+    bool up = WiFi.status() == WL_CONNECTED;
+    if (up && !wifiUp) {
+      status("WiFi connected. IP %s. Connecting to relay at %s:%u",
+             WiFi.localIP().toString().c_str(), RELAY_HOST, RELAY_PORT);
+    } else if (!up && wifiUp) {
+      status("WiFi lost. Reconnecting");
+      relayConnected = false;
+      wifiAttemptMs = nowMs;
+    }
+    wifiUp = up;
 
-      if (wifiUp) {
-        webSocket.loop();
-      } else if (nowMs - wifiAttemptMs >= WIFI_RETRY_MS) {
-        // Auto reconnect usually handles it. This covers the cases it gives up on.
-        status("Still no WiFi. Is \"%s\" a 2.4 GHz network? Retrying", WIFI_SSID);
-        wifiAttemptMs = nowMs;
-        WiFi.disconnect();
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-      }
+    if (wifiUp) {
+      webSocket.loop();
+    } else if (nowMs - wifiAttemptMs >= WIFI_RETRY_MS) {
+      // Auto reconnect usually handles it. This covers the cases it gives up on.
+      status("Still no WiFi. Is \"%s\" a 2.4 GHz network? Retrying", WIFI_SSID);
+      wifiAttemptMs = nowMs;
+      WiFi.disconnect();
+      WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
     }
 
     sendQueuedLines();
-    updateLed(nowMs);
     vTaskDelay(1);
+  }
+}
+
+// ---------- Bluetooth task (core 0) ----------
+
+BLEServer *bleServer;
+BLECharacteristic *samplesCharacteristic;
+
+class PenServerCallbacks : public BLEServerCallbacks {
+  void onConnect(BLEServer *server) override {
+    xQueueReset(bleQueue);  // don't send samples left over from before the connection
+    bleConnected = true;
+  }
+  void onDisconnect(BLEServer *server) override {
+    bleConnected = false;
+  }
+};
+
+void startBle() {
+  BLEDevice::init(BLE_NAME);
+  BLEDevice::setMTU(BLE_MTU);  // the app's side picks the final size, usually 185 or more on a Mac
+
+  bleServer = BLEDevice::createServer();
+  bleServer->setCallbacks(new PenServerCallbacks());
+
+  BLEService *service = bleServer->createService(BLE_SERVICE_UUID);
+  // NimBLE adds the descriptor the app writes to subscribe, so none is added here.
+  samplesCharacteristic = service->createCharacteristic(BLE_SAMPLES_UUID, BLECharacteristic::PROPERTY_NOTIFY);
+  service->start();
+
+  // The service UUID goes in the advertisement so the app's chooser can filter on it.
+  // The name doesn't fit next to it, so it goes in the scan response.
+  BLEAdvertising *advertising = BLEDevice::getAdvertising();
+  advertising->addServiceUUID(BLE_SERVICE_UUID);
+  advertising->setScanResponse(true);
+  BLEDevice::startAdvertising();
+  status("Bluetooth advertising as \"%s\"", BLE_NAME);
+}
+
+// Sends everything waiting in the queue, as many samples per notification as the MTU allows.
+void sendQueuedSamples() {
+  static uint8_t batch[BLE_MTU - 3];
+  size_t room = bleServer->getPeerMTU(bleServer->getConnId()) - 3;
+  if (room > sizeof(batch)) {
+    room = sizeof(batch);
+  }
+  size_t used = 0;
+  Packed packed;
+  while (xQueueReceive(bleQueue, &packed, 0) == pdTRUE) {
+    if (used + PACKED_BYTES > room) {
+      samplesCharacteristic->setValue(batch, used);
+      samplesCharacteristic->notify();
+      used = 0;
+    }
+    memcpy(batch + used, packed.bytes, PACKED_BYTES);
+    used += PACKED_BYTES;
+  }
+  if (used > 0) {
+    samplesCharacteristic->setValue(batch, used);
+    samplesCharacteristic->notify();
+  }
+}
+
+void updateLed(uint32_t nowMs) {
+  if (bleConnected || relayConnected) {
+    digitalWrite(LED_PIN, LED_ON);
+  } else {
+    digitalWrite(LED_PIN, (nowMs / BLINK_MS) % 2 == 0 ? LED_ON : LED_OFF);
+  }
+}
+
+void bleTask(void *unused) {
+  startBle();
+  bool wasConnected = false;
+  uint32_t disconnectedMs = 0;
+  bool advertising = true;
+
+  for (;;) {
+    uint32_t nowMs = millis();
+    bool connected = bleConnected;
+
+    if (connected && !wasConnected) {
+      status("Bluetooth connected");
+      advertising = false;
+    } else if (!connected && wasConnected) {
+      status("Bluetooth disconnected. Advertising again");
+      disconnectedMs = nowMs;
+    }
+    wasConnected = connected;
+
+    // A short pause before advertising again gives the stack time to finish the disconnect.
+    if (!connected && !advertising && nowMs - disconnectedMs >= BLE_READVERTISE_MS) {
+      BLEDevice::startAdvertising();
+      advertising = true;
+    }
+
+    if (connected) {
+      sendQueuedSamples();
+    }
+    updateLed(nowMs);
+    vTaskDelay(pdMS_TO_TICKS(BLE_SEND_MS));
   }
 }
 
@@ -312,7 +450,10 @@ void setup() {
   }
 
   serialLock = xSemaphoreCreateMutex();
-  wifiQueue = xQueueCreate(QUEUE_LENGTH, sizeof(Line));
+  bleQueue = xQueueCreate(QUEUE_LENGTH, sizeof(Packed));
+  if (wifiEnabled) {
+    wifiQueue = xQueueCreate(QUEUE_LENGTH, sizeof(Line));
+  }
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LED_OFF);
@@ -325,7 +466,12 @@ void setup() {
   mpuFound = initMpu();
   lastMpuAttemptMs = millis();
 
-  xTaskCreatePinnedToCore(networkTask, "network", 8192, NULL, 1, NULL, 0);
+  xTaskCreatePinnedToCore(bleTask, "ble", 8192, NULL, 1, NULL, 0);
+  if (wifiEnabled) {
+    xTaskCreatePinnedToCore(wifiTask, "wifi", 8192, NULL, 1, NULL, 0);
+  } else {
+    status("No WiFi in secrets.h. Bluetooth and USB only");
+  }
 
   nextSampleUs = micros();
 }
