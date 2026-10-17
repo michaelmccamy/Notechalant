@@ -15,7 +15,7 @@ One JSON object per line, about 100 lines per second, each line ending in `\n`.
 | `t` | Time of the reading | Integer, milliseconds since the board booted (`millis()`) |
 | `gx` `gy` `gz` | Gyroscope rotation speed | Float, **degrees per second**, already scaled from raw counts |
 | `ax` `ay` `az` | Accelerometer | Float, **g** (1.0 is gravity), already scaled from raw counts |
-| `pen` | Button state | `1` while pressed, `0` otherwise |
+| `pen` | Touch pad state | `1` while a finger is on the pad, `0` otherwise |
 
 Scaling for the MPU6050 at its default ranges (±250 °/s, ±2 g)
 

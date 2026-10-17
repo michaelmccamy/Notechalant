@@ -1,6 +1,6 @@
 // Notechalant pen firmware for the Seeed XIAO ESP32S3.
 //
-// Reads the MPU6050 and the button at 100 Hz and sends each sample (docs/data-format.md)
+// Reads the MPU6050 and the touch pad at 100 Hz and sends each sample (docs/data-format.md)
 // up to three ways at once:
 //   - Bluetooth Low Energy notifications, packed binary, to the app's Bluetooth input
 //   - USB serial as JSON lines, so the app's USB input works with no wireless at all
@@ -30,7 +30,7 @@
 // Pins (XIAO labels in comments)
 const int SDA_PIN = 5;     // D4
 const int SCL_PIN = 6;     // D5
-const int BUTTON_PIN = 2;  // D1, to GND, pressed reads LOW
+const int TOUCH_PIN = 2;   // D1, touch channel 2: a wire to a metal pad under the finger
 const int LED_PIN = LED_BUILTIN;  // GPIO21, lit when LOW
 const int LED_ON = LOW;
 const int LED_OFF = HIGH;
@@ -48,11 +48,23 @@ const char *RELAY_PATH = "/pen";
 // Timing
 const uint32_t SAMPLE_PERIOD_US = 10000;  // 100 Hz
 const uint32_t DEBOUNCE_MS = 20;
+const uint32_t TOUCH_SETTLE_MS = 100;    // first readings after the touch driver starts are skipped
+const uint32_t TOUCH_BASELINE_MS = 1000; // untouched average, measured at startup
+const uint32_t TOUCH_REPORT_MS = 1000;   // status line with the live touch value
 const uint32_t MPU_RETRY_MS = 2000;
 const uint32_t WIFI_RETRY_MS = 15000;
 const uint32_t BLINK_MS = 250;
 const uint32_t BLE_SEND_MS = 20;  // one notification per 20 ms, about 2 samples each
 const uint32_t BLE_READVERTISE_MS = 500;
+
+// Touch thresholds, as a fraction above the untouched baseline. On the S3 touch makes the
+// reading go up. The gap between them is the hysteresis, so a reading hovering near one
+// threshold can't flicker the pen. Tune them from the status line, which shows the percentage.
+// Measured with a bare metal pin: a finger adds 140 to 380%, while the untouched reading drifts
+// from -15% to +35% (it stays raised for a while after a touch, and a hovering or gripping hand
+// raises it too), so both thresholds sit well clear of that drift.
+const float TOUCH_DOWN_RATIO = 0.80;  // pen down once 80% above baseline
+const float TOUCH_UP_RATIO = 0.50;    // pen up again once back below 50%
 
 // MPU6050 registers. Ranges must match the divisors in docs/data-format.md.
 const uint8_t MPU_ADDR = 0x68;  // AD0 low or unconnected
@@ -98,8 +110,14 @@ uint32_t lastMpuAttemptMs = 0;
 uint32_t nextSampleUs = 0;
 
 int penState = 0;
-int lastButtonRaw = HIGH;
-uint32_t buttonChangedMs = 0;
+uint32_t touchBaseline = 0;  // 0 means the touch pad didn't work, so the pen stays up
+uint32_t touchDownAt = 0;
+uint32_t touchUpAt = 0;
+uint32_t touchValue = 0;
+bool touchHeld = false;      // after hysteresis, before debounce
+bool lastTouchHeld = false;
+uint32_t touchChangedMs = 0;
+uint32_t lastTouchReportMs = 0;
 
 // ---------- Serial output ----------
 
@@ -188,26 +206,71 @@ void putLe32(uint8_t *p, uint32_t value) {
   }
 }
 
-// ---------- Button ----------
+// ---------- Touch pad ----------
 
-// The pen state only changes once the raw reading has held for DEBOUNCE_MS,
-// so contact bounce can't split a stroke.
-void updateButton(uint32_t nowMs) {
-  int raw = digitalRead(BUTTON_PIN);
-  if (raw != lastButtonRaw) {
-    lastButtonRaw = raw;
-    buttonChangedMs = nowMs;
+// Averages the untouched reading. Runs once in setup(), so don't touch the pen while it boots.
+void measureTouchBaseline() {
+  status("Measuring touch baseline. Don't touch the pen");
+  uint32_t startMs = millis();
+  uint64_t sum = 0;
+  uint32_t count = 0;
+  while (millis() - startMs < TOUCH_SETTLE_MS + TOUCH_BASELINE_MS) {
+    uint32_t value = touchRead(TOUCH_PIN);
+    if (millis() - startMs >= TOUCH_SETTLE_MS && value > 0) {
+      sum += value;
+      count++;
+    }
+    delay(5);
   }
-  if (nowMs - buttonChangedMs >= DEBOUNCE_MS) {
-    penState = raw == LOW ? 1 : 0;
+  if (count == 0) {
+    status("Touch pad on D1 reads 0. Pen stays up");
+    return;
   }
+  touchBaseline = sum / count;
+  touchDownAt = touchBaseline * (1.0 + TOUCH_DOWN_RATIO);
+  touchUpAt = touchBaseline * (1.0 + TOUCH_UP_RATIO);
+  status("Touch baseline %lu. Pen down above %lu, up below %lu",
+         (unsigned long)touchBaseline, (unsigned long)touchDownAt, (unsigned long)touchUpAt);
+}
+
+// Hysteresis first, then the pen state only changes once that has held for DEBOUNCE_MS,
+// so a brief brush or a noisy reading can't split a stroke.
+void updatePen(uint32_t nowMs) {
+  if (touchBaseline == 0) {
+    penState = 0;
+    return;
+  }
+  touchValue = touchRead(TOUCH_PIN);
+  if (!touchHeld && touchValue > touchDownAt) {
+    touchHeld = true;
+  } else if (touchHeld && touchValue < touchUpAt) {
+    touchHeld = false;
+  }
+  if (touchHeld != lastTouchHeld) {
+    lastTouchHeld = touchHeld;
+    touchChangedMs = nowMs;
+  }
+  if (nowMs - touchChangedMs >= DEBOUNCE_MS) {
+    penState = touchHeld ? 1 : 0;
+  }
+}
+
+void reportTouch(uint32_t nowMs) {
+  if (touchBaseline == 0 || nowMs - lastTouchReportMs < TOUCH_REPORT_MS) {
+    return;
+  }
+  lastTouchReportMs = nowMs;
+  float percent = 100.0 * ((float)touchValue - (float)touchBaseline) / touchBaseline;
+  status("Touch %lu, baseline %lu (%+.1f%%), pen %d",
+         (unsigned long)touchValue, (unsigned long)touchBaseline, percent, penState);
 }
 
 // ---------- Sampling ----------
 
 void takeSample() {
   uint32_t nowMs = millis();
-  updateButton(nowMs);
+  updatePen(nowMs);
+  reportTouch(nowMs);
 
   if (!mpuFound) {
     if (nowMs - lastMpuAttemptMs >= MPU_RETRY_MS) {
@@ -457,7 +520,6 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, LED_OFF);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
 
   status("Notechalant pen starting");
 
@@ -465,6 +527,8 @@ void setup() {
   Wire.setClock(400000);
   mpuFound = initMpu();
   lastMpuAttemptMs = millis();
+
+  measureTouchBaseline();
 
   xTaskCreatePinnedToCore(bleTask, "ble", 8192, NULL, 1, NULL, 0);
   if (wifiEnabled) {

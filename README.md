@@ -2,7 +2,7 @@
 
 Turn any screen into a whiteboard you can write on from anywhere in the room, for about $25 in parts.
 
-A pen with a motion sensor streams its rotation to a laptop app. The app turns small wrist movements into a cursor, draws ink while the button is held, and turns the writing into typed text or math.
+A pen with a motion sensor streams its rotation to a laptop app. The app turns small wrist movements into a cursor, draws ink while a finger is on the touch pad, and turns the writing into typed text or math.
 
 ```
 MPU6050 -> XIAO ESP32-S3 -> Bluetooth LE -> browser app -> recognition -> output
@@ -102,7 +102,7 @@ All hardware inputs end up calling the same function, `onPenData(sample)`, in `a
 - **USB** connects to the STM32 or ESP32 over Web Serial at 115200 baud.
 - **WiFi** connects straight to a WebSocket server on the ESP32. This is the fallback, if the pen hosts its own network.
 
-Hold **Space** to force pen down. This stands in for the button until it's wired.
+Hold **Space** to force pen down. This stands in for the pen's touch pad, for example while tuning motion without the hardware.
 
 Press **C** to recenter the cursor and **R** to recalibrate the motion module.
 
