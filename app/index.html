@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Notechalant</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <header class="toolbar">
+      <div class="brand">Notechalant</div>
+
+      <div class="group" id="colors" aria-label="Pen color"></div>
+
+      <div class="group">
+        <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
+        <button id="clear" title="Clear page">Clear</button>
+        <button id="recognize" class="primary" title="Turn the writing into text">Recognize</button>
+      </div>
+
+      <div class="group">
+        <button id="connect-serial" title="Connect over USB (Chrome or Edge)">USB</button>
+        <button id="connect-wifi" title="Connect to the pen over WiFi">WiFi</button>
+        <button id="load-recording" title="Replay a recorded .jsonl file">Load recording</button>
+        <input id="recording-file" type="file" accept=".jsonl,.txt,.json" hidden />
+      </div>
+
+      <div class="status" id="status">Mouse ready</div>
+    </header>
+
+    <main class="stage">
+      <canvas id="ink"></canvas>
+      <aside class="result" id="result" hidden>
+        <div class="result-head">
+          <span>Recognized</span>
+          <button id="result-close" aria-label="Close">×</button>
+        </div>
+        <pre id="result-text"></pre>
+      </aside>
+    </main>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
