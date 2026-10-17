@@ -1,6 +1,6 @@
 // Wires the pieces together. Each module does one job.
 //
-//   serial / wifi / replay  ->  hub.onPenData(sample)  ->  motion.update  ->  ink.moveBy
+//   relay / serial / wifi / replay  ->  hub.onPenData(sample)  ->  motion.update  ->  ink.moveBy
 //   mouse                   ->  ink.moveTo
 
 import { createInkCanvas } from './ink/inkCanvas.js';
@@ -9,6 +9,7 @@ import { createInputHub } from './input/hub.js';
 import { parseRecording } from './input/parseSample.js';
 import { connectSerial, serialSupported } from './input/serial.js';
 import { connectWebSocket } from './input/websocket.js';
+import { connectRelay, RELAY_URL } from './input/relay.js';
 import { playRecording } from './input/replay.js';
 import { createMotion } from './motion/index.js';
 import { createToolbar } from './ui/toolbar.js';
@@ -90,6 +91,31 @@ const toolbar = createToolbar({
     } finally {
       toolbar.setRecognizing(false);
     }
+  },
+
+  // The relay keeps reconnecting on its own, so it only ends when the button is clicked again.
+  onRelay: async function () {
+    if (active !== null && active.name === 'relay') {
+      await stopActive();
+      toolbar.setStatus('Relay off');
+      return;
+    }
+    await stopActive();
+    toolbar.setStatus('Waiting for relay at ' + RELAY_URL);
+    let penOnline = false;
+    const connection = connectRelay(RELAY_URL, hub.onPenData, function (status) {
+      toolbar.setRelayStatus(status);
+      const nowOnline = status.relay && status.pens > 0;
+      if (nowOnline && !penOnline) {
+        hub.recalibrate();
+        toolbar.setStatus('Pen connected. Hold still to calibrate');
+      } else if (!nowOnline && penOnline) {
+        liftPen();
+        toolbar.setStatus(status.relay ? 'Pen disconnected' : 'Relay lost. Retrying');
+      }
+      penOnline = nowOnline;
+    });
+    startSource('relay', connection.disconnect);
   },
 
   onSerial: async function () {

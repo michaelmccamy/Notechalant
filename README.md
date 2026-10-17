@@ -21,6 +21,7 @@ Built at SwampHacks XII.
 | `app/src/motion/` | Gyro to cursor movement, calibration, smoothing | CpE 2 |
 | `app/src/` (everything else) | Canvas, inputs, slides, toolbar | CS |
 | `server/` | Recognition endpoint that keeps the API key off the frontend | CpE 3 |
+| `relay/` | WebSocket relay from the pen to the app, plus a fake pen for testing | CpE 1 |
 | `tools/` | Small scripts, like the synthetic data generator | Anyone |
 
 Stay inside your own folder when you can. It keeps merge conflicts close to zero.
@@ -49,14 +50,38 @@ npm start
 
 The app's dev server forwards `/api` requests to it on port 8787.
 
+### Running with the relay
+
+The pen sends its data over WiFi to a small relay on the laptop, and the app reads from the relay. Use three terminals.
+
+```bash
+# 1. Relay. Prints the URL the ESP32 should connect to.
+cd relay
+npm install
+npm run relay
+
+# 2. Fake pen, if the hardware isn't ready. Draws loops, pen down 2s, up 1s.
+cd relay
+npm run fakepen
+
+# 3. App
+cd app
+npm run dev
+```
+
+Open the app and click **Relay**. The toolbar shows whether the relay and pen are connected, and the pen's sample rate, which should be about 100/s. If the relay or the pen restarts, the app reconnects on its own. Click **Relay** again to turn it off.
+
+For the real pen, skip step 2. The laptop and ESP32 must be on the same WiFi network, and the firmware connects to the pen URL for that network, which the relay prints for each interface. Skip VPN interfaces like `utun` (Tailscale), since the ESP32 can't reach them. On a Mac, run `ipconfig getifaddr en0` to confirm your WiFi address. See `docs/data-format.md` for why this is the main WiFi path.
+
 ## Inputs
 
 All hardware inputs end up calling the same function, `onPenData(sample)`, in `app/src/input/hub.js`.
 
 - **Mouse** draws directly on the canvas. Use it to test anything ink related.
 - **Load recording** replays a `.jsonl` file at real speed. This tests the full pipeline with no hardware.
+- **Relay** receives the pen through `relay/relay.js` and reconnects on its own. This is the main WiFi path.
 - **USB** connects to the STM32 or ESP32 over Web Serial at 115200 baud.
-- **WiFi** connects to the ESP32's WebSocket server.
+- **WiFi** connects straight to a WebSocket server on the ESP32. This is the fallback, if the pen hosts its own network.
 
 Hold **Space** to force pen down. This stands in for the button until it's wired.
 
