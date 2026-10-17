@@ -4,6 +4,7 @@
 //   mouse                   ->  ink.moveTo
 //   explorer / tabs         ->  openDocument  ->  pageView (one page, ink canvas on top)
 //   ink changes             ->  captureInk (page units)  ->  saved to .notechalant/ in the folder
+//   pen pauses              ->  notes controller  ->  recognize new strokes  ->  that file's notes
 //   Save copy               ->  buildCopy (document + ink)  ->  new file next to the original
 
 import { createInkCanvas } from './ink/inkCanvas.js';
@@ -17,6 +18,7 @@ import { playRecording } from './input/replay.js';
 import { createMotion } from './motion/index.js';
 import { createToolbar } from './ui/toolbar.js';
 import { recognizeImage } from './recognize.js';
+import { createNotesController } from './notes/notesController.js';
 import { createWhiteboard, openDocument } from './files/documents.js';
 import { createPageView } from './files/pageView.js';
 import { createExplorer } from './files/explorer.js';
@@ -40,6 +42,10 @@ const WHITEBOARD_KEY = 'notechalant.whiteboard';
 // Ink is saved this long after the last change, so a burst of writing becomes one save.
 const SAVE_DELAY_MS = 800;
 const TICK_MS = 250;
+// How long the pen has to stay still before new writing is typed up.
+const TRANSCRIBE_IDLE_MS = 2000;
+const AUTO_KEY = 'notechalant.autoTranscribe';
+const NOTES_SHOWN_KEY = 'notechalant.notesShown';
 
 const canvas = document.getElementById('ink');
 const ink = createInkCanvas(canvas);
@@ -66,6 +72,7 @@ const whiteboard = {
   page: 0,
   ink: loadWhiteboard(),
   dirty: false,
+  notes: null,
 };
 let tabs = [whiteboard];
 let activeTab = whiteboard;
@@ -120,6 +127,37 @@ fileInput.addEventListener('change', function () {
   openLooseFiles(files);
 });
 
+// Each tab's typed notes, in the panel on the right.
+const notes = createNotesController({
+  getActiveTab: function () {
+    return activeTab;
+  },
+  getFolder: function () {
+    return folder;
+  },
+  isWriting: function () {
+    return ink.isWriting();
+  },
+  lastInkChangeAt: function () {
+    return lastInkChangeAt;
+  },
+  goToPage: goToPage,
+  recognize: recognizeImage,
+  idleMs: TRANSCRIBE_IDLE_MS,
+  onStatus: function (text, isError) {
+    toolbar.setStatus(text, isError);
+  },
+  onBusyChange: function (isBusy) {
+    toolbar.setTranscribing(isBusy);
+  },
+});
+
+function showNotes(isShown) {
+  document.body.classList.toggle('notes-hidden', !isShown);
+  toolbar.setNotesShown(isShown);
+  saveSetting(NOTES_SHOWN_KEY, isShown ? 'on' : 'off');
+}
+
 // Copies the canvas strokes into the active tab if they changed since last time.
 function captureInk() {
   const revision = ink.getRevision();
@@ -150,6 +188,7 @@ function activate(tab) {
   renderTabs();
   explorer.setActive(tab.path);
   showPage();
+  notes.show(tab);
 }
 
 function goToPage(index) {
@@ -159,6 +198,7 @@ function goToPage(index) {
   captureInk();
   activeTab.page = index;
   showPage();
+  notes.show(activeTab);
 }
 
 function renderTabs() {
@@ -177,6 +217,8 @@ function tabTitle(tab) {
 }
 
 function addTab(tab) {
+  tab.notes = null;
+  notes.attach(tab);
   tabs.splice(tabs.indexOf(activeTab) + 1, 0, tab);
   activate(tab);
   const doc = tab.doc;
@@ -259,6 +301,7 @@ async function closeTab(id) {
     activeTab = tabs[Math.min(index, tabs.length - 1)];
     explorer.setActive(activeTab.path);
     showPage();
+    notes.show(activeTab);
   }
   renderTabs();
 }
@@ -476,6 +519,7 @@ new ResizeObserver(function () {
 
 setInterval(function () {
   captureInk();
+  notes.tick();
   if (!saving && !ink.isWriting() && performance.now() - lastInkChangeAt > SAVE_DELAY_MS && tabs.some((tab) => tab.dirty)) {
     saveDirty();
   }
@@ -538,26 +582,23 @@ const toolbar = createToolbar({
 
   onClear: function () {
     ink.clear();
-    toolbar.hideResult();
   },
 
   onSaveCopy: saveCopy,
 
-  onRecognize: async function () {
-    if (ink.isEmpty()) {
-      toolbar.setStatus('Write something first');
-      return;
-    }
-    toolbar.setRecognizing(true);
-    try {
-      const text = await recognizeImage(ink.toPngDataUrl());
-      toolbar.showResult(text);
-      toolbar.setStatus('Recognized');
-    } catch (err) {
-      toolbar.setStatus(err.message, true);
-    } finally {
-      toolbar.setRecognizing(false);
-    }
+  onTranscribe: function () {
+    captureInk();
+    notes.transcribeNow();
+  },
+
+  onAutoChange: function (isOn) {
+    notes.setAuto(isOn);
+    saveSetting(AUTO_KEY, isOn ? 'on' : 'off');
+    toolbar.setStatus(isOn ? 'Auto transcribe on' : 'Auto transcribe off. Press Transcribe or Enter');
+  },
+
+  onToggleNotes: function () {
+    showNotes(document.body.classList.contains('notes-hidden'));
   },
 
   // The relay keeps reconnecting on its own, so it only ends when the button is clicked again.
@@ -662,16 +703,24 @@ const toolbar = createToolbar({
 });
 
 function loadWsUrl() {
-  try {
-    return localStorage.getItem(WS_URL_KEY) || DEFAULT_WS_URL;
-  } catch (err) {
-    return DEFAULT_WS_URL;
-  }
+  return loadSetting(WS_URL_KEY) || DEFAULT_WS_URL;
 }
 
 function saveWsUrl(url) {
+  saveSetting(WS_URL_KEY, url);
+}
+
+function loadSetting(key) {
   try {
-    localStorage.setItem(WS_URL_KEY, url);
+    return localStorage.getItem(key);
+  } catch (err) {
+    return null;
+  }
+}
+
+function saveSetting(key, value) {
+  try {
+    localStorage.setItem(key, value);
   } catch (err) {
     // Storage can be blocked. Not worth failing over.
   }
@@ -684,9 +733,10 @@ function saveWsUrl(url) {
 // Ctrl/Cmd+S  save a copy with the ink on it
 // C  recenter cursor
 // R  recalibrate motion
-// Esc  close the result panel
+// Enter  transcribe new writing on this page now
+// None of them fire while typing in a text field, like the note editor.
 window.addEventListener('keydown', function (event) {
-  if (event.target instanceof HTMLInputElement) {
+  if (event.target instanceof Element && event.target.closest('input, textarea, [contenteditable]')) {
     return;
   }
   if (event.key === 'PageDown' || event.key === 'PageUp') {
@@ -706,8 +756,9 @@ window.addEventListener('keydown', function (event) {
   } else if (event.key === 'r' || event.key === 'R') {
     hub.recalibrate();
     toolbar.setStatus('Recalibrating. Hold still');
-  } else if (event.key === 'Escape') {
-    toolbar.hideResult();
+  } else if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) {
+    event.preventDefault();
+    toolbar.buttons.transcribe.click();
   }
 });
 
@@ -724,7 +775,12 @@ window.addEventListener('blur', function () {
   hub.setSpacebar(false);
 });
 
+notes.attach(whiteboard);
 activate(whiteboard);
+const autoOn = loadSetting(AUTO_KEY) !== 'off';
+toolbar.setAuto(autoOn);
+notes.setAuto(autoOn);
+showNotes(loadSetting(NOTES_SHOWN_KEY) !== 'off');
 ink.centerCursor();
 ink.hideCursor();
 

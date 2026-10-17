@@ -6,8 +6,7 @@ export function createToolbar(handlers) {
   const statusEl = document.getElementById('status');
   const colorsEl = document.getElementById('colors');
   const fileInput = document.getElementById('recording-file');
-  const resultEl = document.getElementById('result');
-  const resultText = document.getElementById('result-text');
+  const autoInput = document.getElementById('auto-transcribe');
   const relayIndicators = document.getElementById('relay-indicators');
   const relayIndicator = document.getElementById('relay-indicator');
   const penIndicator = document.getElementById('pen-indicator');
@@ -17,7 +16,8 @@ export function createToolbar(handlers) {
     undo: document.getElementById('undo'),
     clear: document.getElementById('clear'),
     saveCopy: document.getElementById('save-copy'),
-    recognize: document.getElementById('recognize'),
+    transcribe: document.getElementById('transcribe'),
+    notes: document.getElementById('toggle-notes'),
     serial: document.getElementById('connect-serial'),
     wifi: document.getElementById('connect-wifi'),
     recording: document.getElementById('load-recording'),
@@ -47,7 +47,11 @@ export function createToolbar(handlers) {
   buttons.undo.addEventListener('click', handlers.onUndo);
   buttons.clear.addEventListener('click', handlers.onClear);
   buttons.saveCopy.addEventListener('click', handlers.onSaveCopy);
-  buttons.recognize.addEventListener('click', handlers.onRecognize);
+  buttons.transcribe.addEventListener('click', handlers.onTranscribe);
+  buttons.notes.addEventListener('click', handlers.onToggleNotes);
+  autoInput.addEventListener('change', function () {
+    handlers.onAutoChange(autoInput.checked);
+  });
   buttons.relay.addEventListener('click', handlers.onRelay);
   buttons.serial.addEventListener('click', handlers.onSerial);
   buttons.wifi.addEventListener('click', handlers.onWifi);
@@ -65,8 +69,6 @@ export function createToolbar(handlers) {
       handlers.onRecordingFile(file);
     }
   });
-
-  document.getElementById('result-close').addEventListener('click', hideResult);
 
   function setStatus(text, isError) {
     statusEl.textContent = text;
@@ -98,9 +100,9 @@ export function createToolbar(handlers) {
     penIndicator.classList.toggle('ok', penOnline);
   }
 
-  function setRecognizing(isBusy) {
-    buttons.recognize.disabled = isBusy;
-    buttons.recognize.textContent = isBusy ? 'Reading…' : 'Recognize';
+  function setTranscribing(isBusy) {
+    buttons.transcribe.disabled = isBusy;
+    buttons.transcribe.textContent = isBusy ? 'Reading…' : 'Transcribe';
   }
 
   function setSavingCopy(isBusy) {
@@ -108,14 +110,14 @@ export function createToolbar(handlers) {
     buttons.saveCopy.textContent = isBusy ? 'Saving…' : 'Save copy';
   }
 
-  function showResult(text) {
-    resultText.textContent = text;
-    resultEl.hidden = false;
+  function setAuto(isOn) {
+    autoInput.checked = isOn;
   }
 
-  function hideResult() {
-    resultEl.hidden = true;
+  function setNotesShown(isShown) {
+    buttons.notes.classList.toggle('active', isShown);
+    buttons.notes.setAttribute('aria-pressed', String(isShown));
   }
 
-  return { setStatus, setActiveSource, setRelayStatus, setRecognizing, setSavingCopy, showResult, hideResult, buttons };
+  return { setStatus, setActiveSource, setRelayStatus, setTranscribing, setSavingCopy, setAuto, setNotesShown, buttons };
 }

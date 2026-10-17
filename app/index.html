@@ -17,7 +17,12 @@
         <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
         <button id="clear" title="Clear page">Clear</button>
         <button id="save-copy" title="Save a new file with the ink on it, next to the original. The original isn't changed (Ctrl+S)">Save copy</button>
-        <button id="recognize" class="primary" title="Turn the writing into text">Recognize</button>
+        <button id="transcribe" class="primary" title="Type up new writing on this page now (Enter)">Transcribe</button>
+        <label class="toggle" title="Type up writing automatically when you pause">
+          <input id="auto-transcribe" type="checkbox" checked />
+          Auto
+        </label>
+        <button id="toggle-notes" title="Show or hide the notes panel">Notes</button>
       </div>
 
       <div class="group">
@@ -68,13 +73,6 @@
             <div class="page-message-title"></div>
             <div class="page-message-text"></div>
           </div>
-          <aside class="result" id="result" hidden>
-            <div class="result-head">
-              <span>Recognized</span>
-              <button id="result-close" aria-label="Close">×</button>
-            </div>
-            <pre id="result-text"></pre>
-          </aside>
         </div>
 
         <footer class="pagebar">
@@ -85,6 +83,16 @@
           <span class="pagebar-save" id="save-state"></span>
         </footer>
       </section>
+
+      <aside class="notes" id="notes" aria-label="Notes">
+        <div class="notes-head">
+          <span class="explorer-label">Notes</span>
+          <button id="notes-copy" class="head-button" title="Copy these notes as Markdown">Copy</button>
+          <button id="notes-export" class="head-button" title="Download these notes as a Markdown file">Export .md</button>
+        </div>
+        <div class="notes-file" id="notes-file"></div>
+        <div class="notes-blocks" id="notes-blocks" aria-live="polite"></div>
+      </aside>
     </main>
 
     <div class="drop-overlay" id="drop-overlay" hidden>

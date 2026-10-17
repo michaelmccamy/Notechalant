@@ -1,15 +1,30 @@
 // The recognition logic, shared by the local server (index.mjs) and the Vercel function
 // (api/recognize.mjs). Takes the parsed request body, returns { status, body } to send back.
 
+// The app adds whatever comes back to the file's notes, so it has to read as note text.
 const PROMPT = [
   'This image is handwriting drawn in the air with a motion-tracking pen, so letters may be shaky or uneven.',
-  'Transcribe exactly what is written.',
-  'If it is a math expression or equation, give it as LaTeX on the first line, then the solution or simplified result on the next line.',
-  'If there is no handwriting, return exactly: (nothing recognized)',
+  'Transcribe exactly what is written, as note text.',
+  'Write any math as LaTeX inside $...$, or $$...$$ for an equation on its own line. Do not solve or simplify it.',
+  'Use Markdown only for headings (#) and lists (- or 1.). No bold, no code fences.',
+  'If there is no writing, or only marks such as circles, arrows, underlines, or check marks, return exactly: (nothing recognized)',
   'Return only the transcription, with no commentary.',
 ].join(' ');
 
 const PNG_PREFIX = 'data:image/png;base64,';
+const MAX_CONTEXT_CHARS = 600;
+
+function buildPrompt(context) {
+  if (!context) {
+    return PROMPT;
+  }
+  return (
+    PROMPT +
+    '\n\nThe notes so far end with the text below. Use it only to resolve unclear words or symbols. Do not repeat it.\n"""\n' +
+    context +
+    '\n"""'
+  );
+}
 // Most answers take about a second, but now and then one stalls for 30s or more.
 // Giving up and asking again is much faster than waiting it out.
 const TIMEOUT_MS = 8000;
@@ -33,7 +48,8 @@ export async function recognize(body, env) {
   }
 
   try {
-    const text = await callGemini(image.slice(PNG_PREFIX.length), env);
+    const context = typeof body.context === 'string' ? body.context.slice(-MAX_CONTEXT_CHARS).trim() : '';
+    const text = await callGemini(image.slice(PNG_PREFIX.length), context, env);
     return { status: 200, body: { text: text || '(nothing recognized)' } };
   } catch (err) {
     console.error(err);
@@ -41,7 +57,7 @@ export async function recognize(body, env) {
   }
 }
 
-async function callGemini(base64Png, env) {
+async function callGemini(base64Png, context, env) {
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + env.GEMINI_MODEL + ':generateContent';
   const request = {
     method: 'POST',
@@ -52,7 +68,7 @@ async function callGemini(base64Png, env) {
     body: JSON.stringify({
       contents: [
         {
-          parts: [{ text: PROMPT }, { inline_data: { mime_type: 'image/png', data: base64Png } }],
+          parts: [{ text: buildPrompt(context) }, { inline_data: { mime_type: 'image/png', data: base64Png } }],
         },
       ],
     }),
