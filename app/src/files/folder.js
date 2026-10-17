@@ -8,6 +8,9 @@ const INK_FOLDER = '.notechalant';
 const DB_NAME = 'notechalant';
 const DB_STORE = 'handles';
 const DB_KEY = 'folder';
+// Ink for files opened on their own (Open File, or dropped in). There's no folder to save next
+// to, so it stays in this browser.
+const INK_STORE = 'ink';
 
 export function foldersSupported() {
   return typeof window.showDirectoryPicker === 'function';
@@ -18,6 +21,32 @@ export async function pickFolder() {
   const handle = await window.showDirectoryPicker({ id: 'notechalant', mode: 'readwrite' });
   await rememberFolder(handle);
   return createFolder(handle);
+}
+
+// A folder dropped onto the page. Dropping counts as a click, so the permission prompt can show.
+export async function folderFromHandle(handle) {
+  if ((await permission(handle, true)) !== 'granted') {
+    throw new Error('Permission to open ' + handle.name + ' was not given');
+  }
+  await rememberFolder(handle);
+  return createFolder(handle);
+}
+
+// Ink for a single opened file, keyed by its name and size since there's no path to go by.
+export function looseInkKey(file) {
+  return file.name + ':' + file.size;
+}
+
+export async function loadLooseInk(key) {
+  try {
+    return unpackInk(await dbRequest(INK_STORE, 'readonly', (store) => store.get(key)));
+  } catch (err) {
+    return {};
+  }
+}
+
+export async function saveLooseInk(key, name, pages) {
+  await dbRequest(INK_STORE, 'readwrite', (store) => store.put(packInk(name, pages), key));
 }
 
 // The folder from last visit, without asking for permission yet. Returns { name, open } or null.
@@ -95,12 +124,16 @@ async function permission(handle, ask) {
   return handle.requestPermission(options);
 }
 
-// Folder handles can't go in localStorage, but IndexedDB can store them.
+// Folder handles can't go in localStorage, but IndexedDB can store them. Version 2 added ink.
 function openDb() {
   return new Promise(function (resolve, reject) {
-    const request = indexedDB.open(DB_NAME, 1);
+    const request = indexedDB.open(DB_NAME, 2);
     request.onupgradeneeded = function () {
-      request.result.createObjectStore(DB_STORE);
+      for (const name of [DB_STORE, INK_STORE]) {
+        if (!request.result.objectStoreNames.contains(name)) {
+          request.result.createObjectStore(name);
+        }
+      }
     };
     request.onsuccess = function () {
       resolve(request.result);
@@ -111,34 +144,33 @@ function openDb() {
   });
 }
 
-async function rememberFolder(handle) {
+// Runs one request against a store and resolves with its result once the transaction commits.
+async function dbRequest(storeName, mode, makeRequest) {
+  const db = await openDb();
   try {
-    const db = await openDb();
-    await new Promise(function (resolve, reject) {
-      const tx = db.transaction(DB_STORE, 'readwrite');
-      tx.objectStore(DB_STORE).put(handle, DB_KEY);
-      tx.oncomplete = resolve;
+    return await new Promise(function (resolve, reject) {
+      const tx = db.transaction(storeName, mode);
+      const request = makeRequest(tx.objectStore(storeName));
+      tx.oncomplete = function () {
+        resolve(request.result);
+      };
       tx.onerror = function () {
         reject(tx.error);
       };
     });
+  } finally {
     db.close();
+  }
+}
+
+async function rememberFolder(handle) {
+  try {
+    await dbRequest(DB_STORE, 'readwrite', (store) => store.put(handle, DB_KEY));
   } catch (err) {
     // Not remembering the folder only costs a click next time.
   }
 }
 
 async function loadHandle() {
-  const db = await openDb();
-  const handle = await new Promise(function (resolve, reject) {
-    const request = db.transaction(DB_STORE).objectStore(DB_STORE).get(DB_KEY);
-    request.onsuccess = function () {
-      resolve(request.result || null);
-    };
-    request.onerror = function () {
-      reject(request.error);
-    };
-  });
-  db.close();
-  return handle;
+  return (await dbRequest(DB_STORE, 'readonly', (store) => store.get(DB_KEY))) || null;
 }

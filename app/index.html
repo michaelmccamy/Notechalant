@@ -40,14 +40,18 @@
         <div class="explorer-head">
           <span class="explorer-label">Explorer</span>
           <button id="explorer-refresh" class="icon-button" title="Refresh the file list" aria-label="Refresh" hidden>↻</button>
-          <button id="explorer-open-folder" class="icon-button" title="Open a folder" aria-label="Open a folder">+</button>
+          <button id="explorer-open-file-small" class="head-button" title="Open one or more files">File</button>
+          <button id="explorer-open-folder" class="head-button" title="Open a folder">Folder</button>
         </div>
         <div class="explorer-title" id="explorer-title">No folder open</div>
         <div class="explorer-empty" id="explorer-empty">
           <p id="explorer-empty-text"></p>
           <button id="explorer-open" class="primary">Open Folder</button>
           <button id="explorer-reopen" hidden>Reopen</button>
+          <button id="explorer-open-file">Open File</button>
+          <p class="explorer-hint">Or drop a file or folder anywhere on the page.</p>
         </div>
+        <input id="open-file-input" type="file" multiple hidden />
         <div class="explorer-tree" id="explorer-tree" hidden></div>
       </aside>
 
@@ -81,6 +85,10 @@
         </footer>
       </section>
     </main>
+
+    <div class="drop-overlay" id="drop-overlay" hidden>
+      <div class="drop-overlay-box">Drop to open</div>
+    </div>
 
     <script type="module" src="/src/main.js"></script>
   </body>

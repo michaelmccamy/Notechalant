@@ -20,8 +20,16 @@ import { createWhiteboard, openDocument } from './files/documents.js';
 import { createPageView } from './files/pageView.js';
 import { createExplorer } from './files/explorer.js';
 import { createTabs } from './files/tabs.js';
-import { foldersSupported, pickFolder, lastFolder } from './files/folder.js';
-import { scaleStrokes, packInk, unpackInk } from './files/fileTypes.js';
+import {
+  foldersSupported,
+  pickFolder,
+  lastFolder,
+  folderFromHandle,
+  looseInkKey,
+  loadLooseInk,
+  saveLooseInk,
+} from './files/folder.js';
+import { scaleStrokes, packInk, unpackInk, OPENABLE_EXTENSIONS } from './files/fileTypes.js';
 
 const DEFAULT_WS_URL = 'ws://192.168.4.1:81';
 const WS_URL_KEY = 'notechalant.wsUrl';
@@ -39,15 +47,18 @@ attachMouse(canvas, ink);
 
 // ---- Files and tabs ----
 //
-// A tab is { id, name, path, doc, page, ink, dirty }. `ink` maps page index to strokes in page
-// units. The canvas holds the current page's strokes in screen pixels; captureInk copies them
-// back into the tab whenever they change. The whiteboard tab is always open and saves to this
-// browser, so the app still works with no folder.
+// A tab is { id, name, path, looseKey, doc, page, ink, dirty }. `ink` maps page index to strokes
+// in page units. The canvas holds the current page's strokes in screen pixels; captureInk copies
+// them back into the tab whenever they change. Ink saves to wherever the tab came from:
+//   folder file   path is set, ink goes to .notechalant/ in the folder
+//   single file   looseKey is set (Open File or dropped in), ink goes to this browser
+//   whiteboard    always open, ink goes to this browser, so the app works with nothing opened
 
 const whiteboard = {
   id: 'whiteboard',
   name: 'Whiteboard',
   path: null,
+  looseKey: null,
   doc: createWhiteboard(),
   page: 0,
   ink: loadWhiteboard(),
@@ -93,6 +104,17 @@ const explorer = createExplorer({
     }
   },
   onOpenFile: openFile,
+  onPickFiles: function () {
+    fileInput.click();
+  },
+});
+
+const fileInput = document.getElementById('open-file-input');
+fileInput.accept = OPENABLE_EXTENSIONS.map((ext) => '.' + ext).join(',');
+fileInput.addEventListener('change', function () {
+  const files = Array.from(fileInput.files);
+  fileInput.value = '';
+  openLooseFiles(files);
 });
 
 // Copies the canvas strokes into the active tab if they changed since last time.
@@ -139,10 +161,54 @@ function goToPage(index) {
 function renderTabs() {
   tabStrip.render(
     tabs.map(function (tab) {
-      return { id: tab.id, name: tab.name, title: tab.path || 'Whiteboard, saved in this browser', closable: tab !== whiteboard };
+      return { id: tab.id, name: tab.name, title: tabTitle(tab), closable: tab !== whiteboard };
     }),
     activeTab.id,
   );
+}
+
+function tabTitle(tab) {
+  if (tab.path) return tab.path;
+  if (tab.looseKey) return tab.name + ' (not in a folder, ink saved in this browser)';
+  return 'Whiteboard, saved in this browser';
+}
+
+function addTab(tab) {
+  tabs.splice(tabs.indexOf(activeTab) + 1, 0, tab);
+  activate(tab);
+  const doc = tab.doc;
+  toolbar.setStatus(doc.pageCount > 1 ? 'Opened ' + doc.name + '. Page Up and Page Down change pages' : 'Opened ' + doc.name);
+}
+
+// Files opened on their own: from Open File, or dropped onto the page.
+async function openLooseFiles(files) {
+  for (const file of files) {
+    await openLooseFile(file);
+  }
+}
+
+async function openLooseFile(file) {
+  const key = looseInkKey(file);
+  const id = 'loose:' + key;
+  const existing = tabs.find((tab) => tab.id === id);
+  if (existing) {
+    activate(existing);
+    return;
+  }
+  if (opening.has(id)) {
+    return;
+  }
+  opening.add(id);
+  toolbar.setStatus('Opening ' + file.name + '…');
+  try {
+    const doc = await openDocument(file, null);
+    const savedInk = await loadLooseInk(key);
+    addTab({ id: id, name: doc.name, path: null, looseKey: key, doc: doc, page: 0, ink: savedInk, dirty: false });
+  } catch (err) {
+    toolbar.setStatus("Couldn't open " + file.name + ': ' + err.message, true);
+  } finally {
+    opening.delete(id);
+  }
 }
 
 async function openFile(handle, path) {
@@ -164,10 +230,7 @@ async function openFile(handle, path) {
       doc.dispose();
       return;
     }
-    const tab = { id: 'file:' + path, name: doc.name, path: path, doc: doc, page: 0, ink: savedInk, dirty: false };
-    tabs.splice(tabs.indexOf(activeTab) + 1, 0, tab);
-    activate(tab);
-    toolbar.setStatus(doc.pageCount > 1 ? 'Opened ' + doc.name + '. Page Up and Page Down change pages' : 'Opened ' + doc.name);
+    addTab({ id: 'file:' + path, name: doc.name, path: path, looseKey: null, doc: doc, page: 0, ink: savedInk, dirty: false });
   } catch (err) {
     toolbar.setStatus("Couldn't open " + path + ': ' + err.message, true);
   } finally {
@@ -218,19 +281,20 @@ async function reopenFolder() {
   }
 }
 
-// Switching folders saves and closes the old folder's tabs. The whiteboard stays.
+// Switching folders saves and closes the old folder's tabs. The whiteboard and single files stay.
 async function useFolder(newFolder) {
   captureInk();
   await saveDirty();
+  const stayOpen = tabs.filter((tab) => tab.path === null);
   for (const tab of tabs) {
-    if (tab !== whiteboard) {
+    if (!stayOpen.includes(tab)) {
       tab.doc.dispose();
     }
   }
-  tabs = [whiteboard];
+  tabs = stayOpen;
   folder = newFolder;
   await explorer.showFolder(folder);
-  activate(whiteboard);
+  activate(stayOpen.includes(activeTab) ? activeTab : whiteboard);
   toolbar.setStatus('Opened ' + folder.name + '. Pick a file to write on');
 }
 
@@ -240,6 +304,9 @@ async function saveTab(tab) {
     if (tab === whiteboard) {
       localStorage.setItem(WHITEBOARD_KEY, JSON.stringify(packInk(null, tab.ink)));
       showSaveState('Saved in browser', false);
+    } else if (tab.looseKey) {
+      await saveLooseInk(tab.looseKey, tab.name, tab.ink);
+      showSaveState('Saved in browser', false);
     } else {
       showSaveState('Saving…', false);
       await folder.saveInk(tab.path, tab.ink);
@@ -248,7 +315,7 @@ async function saveTab(tab) {
   } catch (err) {
     // Not retried until the ink changes again, so a read-only folder doesn't spam errors.
     showSaveState('Not saved', true);
-    toolbar.setStatus("Couldn't save ink for " + (tab.path || 'the whiteboard') + ': ' + err.message, true);
+    toolbar.setStatus("Couldn't save ink for " + (tab.path || tab.name) + ': ' + err.message, true);
   }
 }
 
@@ -276,6 +343,71 @@ function loadWhiteboard() {
   } catch (err) {
     return {};
   }
+}
+
+// Drag and drop: a file opens on its own, a folder opens in the explorer.
+const dropOverlay = document.getElementById('drop-overlay');
+let dragDepth = 0;
+
+function draggingFiles(event) {
+  return event.dataTransfer && Array.from(event.dataTransfer.types).includes('Files');
+}
+
+window.addEventListener('dragenter', function (event) {
+  if (draggingFiles(event)) {
+    dragDepth++;
+    dropOverlay.hidden = false;
+  }
+});
+
+window.addEventListener('dragleave', function (event) {
+  if (draggingFiles(event) && --dragDepth <= 0) {
+    dragDepth = 0;
+    dropOverlay.hidden = true;
+  }
+});
+
+window.addEventListener('dragover', function (event) {
+  if (draggingFiles(event)) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+  }
+});
+
+window.addEventListener('drop', function (event) {
+  if (!draggingFiles(event)) {
+    return;
+  }
+  event.preventDefault();
+  dragDepth = 0;
+  dropOverlay.hidden = true;
+  // The dropped items stop being readable once this handler returns, so grab them all now.
+  const entries = Array.from(event.dataTransfer.items)
+    .filter((item) => item.kind === 'file')
+    .map(function (item) {
+      return {
+        file: item.getAsFile(),
+        handle: typeof item.getAsFileSystemHandle === 'function' ? item.getAsFileSystemHandle() : null,
+      };
+    });
+  openDropped(entries);
+});
+
+async function openDropped(entries) {
+  const files = [];
+  for (const entry of entries) {
+    const handle = entry.handle ? await entry.handle.catch(() => null) : null;
+    if (handle && handle.kind === 'directory') {
+      try {
+        await useFolder(await folderFromHandle(handle));
+      } catch (err) {
+        toolbar.setStatus(err.message, true);
+      }
+    } else if (entry.file) {
+      files.push(entry.file);
+    }
+  }
+  await openLooseFiles(files);
 }
 
 // Keep the page fitted when the window or sidebar changes size.

@@ -14,7 +14,26 @@ import {
   fitPage,
   PDF_POINTS_TO_PAGE_UNITS,
   renderResolution,
+  pageBreaks,
 } from '../src/files/fileTypes.js';
+
+test('pageBreaks moves a paragraph that does not fit to the next page whole', function () {
+  // Content starts at 100 with 300 per page. Blocks of 120: two fit, the third would cross 400.
+  const blocks = [0, 1, 2, 3, 4].map((i) => ({ top: 100 + i * 120, bottom: 100 + i * 120 + 120 }));
+  assert.deepEqual(pageBreaks(blocks, 100, 300), [100, 340, 580]);
+});
+
+test('pageBreaks cuts a block only when it is taller than a page', function () {
+  // One 700-tall image with 300 per page: cut at 300, 600, and the rest on a third page.
+  assert.deepEqual(pageBreaks([{ top: 0, bottom: 700 }], 0, 300), [0, 300, 600]);
+  // A short line after a tall block starts a new page at the line, not mid-line.
+  assert.deepEqual(pageBreaks([{ top: 0, bottom: 250 }, { top: 250, bottom: 400 }], 0, 300), [0, 250]);
+});
+
+test('pageBreaks keeps everything on one page when it fits', function () {
+  assert.deepEqual(pageBreaks([{ top: 10, bottom: 50 }, { top: 60, bottom: 290 }], 0, 300), [0]);
+  assert.deepEqual(pageBreaks([], 0, 300), [0]);
+});
 
 test('a letter PDF page (612 x 792 pt) becomes the same size as a text page', function () {
   assert.equal(612 * PDF_POINTS_TO_PAGE_UNITS, 816);
@@ -34,7 +53,10 @@ test('renderResolution is sharp on high-DPI screens but capped for huge pages', 
 test('kindOf sorts files by extension, ignoring case', function () {
   assert.equal(kindOf('diagram.PNG'), 'image');
   assert.equal(kindOf('lecture3.pdf'), 'pdf');
-  assert.equal(kindOf('essay.docx'), 'office');
+  assert.equal(kindOf('essay.DOCX'), 'docx');
+  assert.equal(kindOf('slides.pptx'), 'pptx');
+  assert.equal(kindOf('grades.xlsx'), 'xlsx');
+  assert.equal(kindOf('old-essay.doc'), 'office');
   assert.equal(kindOf('notes.md'), 'other');
   assert.equal(kindOf('Makefile'), 'other');
   assert.equal(kindOf('.gitignore'), 'other');

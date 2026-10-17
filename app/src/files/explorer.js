@@ -5,7 +5,7 @@ import { extensionOf, kindOf } from './fileTypes.js';
 
 const INDENT_PX = 14;
 
-export function createExplorer({ onOpenFolder, onReopen, onRefresh, onOpenFile }) {
+export function createExplorer({ onOpenFolder, onReopen, onRefresh, onOpenFile, onPickFiles }) {
   const titleEl = document.getElementById('explorer-title');
   const treeEl = document.getElementById('explorer-tree');
   const emptyEl = document.getElementById('explorer-empty');
@@ -18,6 +18,8 @@ export function createExplorer({ onOpenFolder, onReopen, onRefresh, onOpenFile }
   let activePath = null;
 
   document.getElementById('explorer-open-folder').addEventListener('click', onOpenFolder);
+  document.getElementById('explorer-open-file').addEventListener('click', onPickFiles);
+  document.getElementById('explorer-open-file-small').addEventListener('click', onPickFiles);
   openButton.addEventListener('click', onOpenFolder);
   reopenButton.addEventListener('click', onReopen);
   refreshButton.addEventListener('click', onRefresh);
@@ -31,12 +33,13 @@ export function createExplorer({ onOpenFolder, onReopen, onRefresh, onOpenFile }
     emptyEl.hidden = false;
     refreshButton.hidden = true;
     if (!supported) {
-      emptyText.textContent = 'Opening folders needs Chrome or Edge. The whiteboard still works here.';
+      emptyText.textContent = 'Opening folders needs Chrome or Edge. You can still open single files.';
       openButton.hidden = true;
       reopenButton.hidden = true;
+      document.getElementById('explorer-open-folder').hidden = true;
       return;
     }
-    emptyText.textContent = 'Open a folder to write on the files in it. Your files are never changed.';
+    emptyText.textContent = 'Open a folder or a file to write on it. Your files are never changed.';
     openButton.hidden = false;
     reopenButton.hidden = remembered === null;
     if (remembered !== null) {
