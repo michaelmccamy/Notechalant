@@ -4,6 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Notechalant</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6fed'/%3E%3Cpath d='M8 22c4-9 7-12 9-8s3 5 7-4' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
@@ -34,15 +35,51 @@
       <div class="status" id="status">Mouse ready</div>
     </header>
 
-    <main class="stage">
-      <canvas id="ink"></canvas>
-      <aside class="result" id="result" hidden>
-        <div class="result-head">
-          <span>Recognized</span>
-          <button id="result-close" aria-label="Close">×</button>
+    <main class="workspace">
+      <aside class="explorer" aria-label="Explorer">
+        <div class="explorer-head">
+          <span class="explorer-label">Explorer</span>
+          <button id="explorer-refresh" class="icon-button" title="Refresh the file list" aria-label="Refresh" hidden>↻</button>
+          <button id="explorer-open-folder" class="icon-button" title="Open a folder" aria-label="Open a folder">+</button>
         </div>
-        <pre id="result-text"></pre>
+        <div class="explorer-title" id="explorer-title">No folder open</div>
+        <div class="explorer-empty" id="explorer-empty">
+          <p id="explorer-empty-text"></p>
+          <button id="explorer-open" class="primary">Open Folder</button>
+          <button id="explorer-reopen" hidden>Reopen</button>
+        </div>
+        <div class="explorer-tree" id="explorer-tree" hidden></div>
       </aside>
+
+      <section class="editor">
+        <div class="tabs" id="tabs" role="tablist" aria-label="Open files"></div>
+
+        <div class="stage" id="stage">
+          <div class="page" id="page">
+            <div class="page-content" id="page-content"></div>
+            <canvas id="ink"></canvas>
+          </div>
+          <div class="page-message" id="page-message" hidden>
+            <div class="page-message-title"></div>
+            <div class="page-message-text"></div>
+          </div>
+          <aside class="result" id="result" hidden>
+            <div class="result-head">
+              <span>Recognized</span>
+              <button id="result-close" aria-label="Close">×</button>
+            </div>
+            <pre id="result-text"></pre>
+          </aside>
+        </div>
+
+        <footer class="pagebar">
+          <span class="pagebar-file" id="page-file"></span>
+          <button id="page-prev" title="Previous page (Page Up)" aria-label="Previous page">‹</button>
+          <span id="page-count"></span>
+          <button id="page-next" title="Next page (Page Down)" aria-label="Next page">›</button>
+          <span class="pagebar-save" id="save-state"></span>
+        </footer>
+      </section>
     </main>
 
     <script type="module" src="/src/main.js"></script>
