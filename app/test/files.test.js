@@ -12,7 +12,24 @@ import {
   unpackInk,
   scaleStrokes,
   fitPage,
+  PDF_POINTS_TO_PAGE_UNITS,
+  renderResolution,
 } from '../src/files/fileTypes.js';
+
+test('a letter PDF page (612 x 792 pt) becomes the same size as a text page', function () {
+  assert.equal(612 * PDF_POINTS_TO_PAGE_UNITS, 816);
+  assert.equal(792 * PDF_POINTS_TO_PAGE_UNITS, 1056);
+});
+
+test('renderResolution is sharp on high-DPI screens but capped for huge pages', function () {
+  // Shown at 70% on a 2x screen: render at 2x so it's crisp.
+  assert.equal(renderResolution(816, 1056, 0.7, 2, 16e6), 2);
+  // Shown enlarged 1.5x on a 2x screen: 3x.
+  assert.equal(renderResolution(816, 1056, 1.5, 2, 16e6), 3);
+  // A poster page would need 9600 x 7200 x 4 pixels. Capped to the pixel budget instead.
+  const r = renderResolution(4800, 3600, 1, 2, 16e6);
+  assert.ok(r < 2 && Math.abs(4800 * 3600 * r * r - 16e6) < 1);
+});
 
 test('kindOf sorts files by extension, ignoring case', function () {
   assert.equal(kindOf('diagram.PNG'), 'image');

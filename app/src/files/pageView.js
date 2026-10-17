@@ -34,21 +34,23 @@ export function createPageView({ onPrev, onNext }) {
     const drawable = doc.pageCount > 0;
     pageEl.hidden = !drawable;
     messageEl.hidden = drawable;
-    if (drawable) {
-      const size = doc.pageSize(index);
-      contentEl.style.width = size.width + 'px';
-      contentEl.style.height = size.height + 'px';
-      doc.renderPage(index, contentEl);
-    } else {
-      messageEl.querySelector('.page-message-title').textContent = doc.name;
-      messageEl.querySelector('.page-message-text').textContent = doc.message;
-    }
-
     footerName.textContent = doc.path || doc.name;
     footerCount.textContent = drawable ? 'Page ' + (index + 1) + ' of ' + doc.pageCount : '';
     prevButton.disabled = !drawable || index === 0;
     nextButton.disabled = !drawable || index >= doc.pageCount - 1;
-    return layout();
+
+    if (!drawable) {
+      messageEl.querySelector('.page-message-title').textContent = doc.name;
+      messageEl.querySelector('.page-message-text').textContent = doc.message;
+      return scale;
+    }
+    const size = doc.pageSize(index);
+    contentEl.style.width = size.width + 'px';
+    contentEl.style.height = size.height + 'px';
+    // Lay out first so the document knows how big the page will be shown (PDFs render to match).
+    layout();
+    doc.renderPage(index, contentEl, scale);
+    return scale;
   }
 
   // Fits the current page to the stage. Call again whenever the stage changes size.
