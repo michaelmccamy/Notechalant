@@ -6,3 +6,6 @@ dist/
 *.log
 .vscode/
 .idea/
+
+# ESP32 WiFi credentials
+firmware/esp32/secrets.h
