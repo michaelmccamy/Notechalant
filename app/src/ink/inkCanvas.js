@@ -19,6 +19,13 @@ export function createInkCanvas(canvas) {
   let cssWidth = 0;
   let cssHeight = 0;
   let needsRender = true;
+  // Goes up every time the ink changes, so callers can tell when there's something to save.
+  let revision = 0;
+
+  function inkChanged() {
+    revision++;
+    needsRender = true;
+  }
 
   function resize() {
     const rect = canvas.getBoundingClientRect();
@@ -53,14 +60,17 @@ export function createInkCanvas(canvas) {
 
     if (penDown && current === null) {
       startStroke(x, y);
+      inkChanged();
     } else if (!penDown && current !== null) {
       finishStroke();
+      inkChanged();
     } else if (penDown) {
       const last = current.points[current.points.length - 1];
       const dx = x - last.x;
       const dy = y - last.y;
       if (dx * dx + dy * dy >= MIN_POINT_DISTANCE * MIN_POINT_DISTANCE) {
         current.points.push({ x: x, y: y });
+        inkChanged();
       }
     }
     needsRender = true;
@@ -101,7 +111,7 @@ export function createInkCanvas(canvas) {
     } else if (action.type === 'clear') {
       strokes = action.strokes;
     }
-    needsRender = true;
+    inkChanged();
   }
 
   function clear() {
@@ -111,7 +121,7 @@ export function createInkCanvas(canvas) {
     }
     undoStack.push({ type: 'clear', strokes: strokes });
     strokes = [];
-    needsRender = true;
+    inkChanged();
   }
 
   function setColor(newColor) {
@@ -123,7 +133,8 @@ export function createInkCanvas(canvas) {
     width = newWidth;
   }
 
-  // Slide mode will swap stroke lists per page through these two.
+  // Pages and tabs swap stroke lists through these two. Loading strokes doesn't count as
+  // a change, so opening a file doesn't trigger a save.
   function getStrokes() {
     return strokes;
   }
@@ -137,6 +148,15 @@ export function createInkCanvas(canvas) {
 
   function isEmpty() {
     return strokes.length === 0 && current === null;
+  }
+
+  // True while the pen is down. Nothing gets saved or swapped mid-stroke.
+  function isWriting() {
+    return current !== null;
+  }
+
+  function getRevision() {
+    return revision;
   }
 
   function render() {
@@ -204,6 +224,9 @@ export function createInkCanvas(canvas) {
     getStrokes,
     setStrokes,
     isEmpty,
+    isWriting,
+    getRevision,
+    resize,
     toPngDataUrl,
   };
 }
