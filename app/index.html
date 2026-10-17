@@ -4,69 +4,101 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Notechalant</title>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232f6fed'/%3E%3Cpath d='M8 22c4-9 7-12 9-8s3 5 7-4' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%232e6b4f'/%3E%3Cpath d='M8 22c4-9 7-12 9-8s3 5 7-4' fill='none' stroke='white' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/src/style.css" />
   </head>
   <body>
-    <header class="toolbar">
-      <div class="brand">Notechalant</div>
-
-      <div class="group" id="colors" aria-label="Pen color"></div>
-
-      <div class="group">
-        <button id="undo" title="Undo (Ctrl+Z)">Undo</button>
-        <button id="clear" title="Clear page">Clear</button>
-        <button id="save-copy" title="Save a new file with the ink on it, next to the original. The original isn't changed (Ctrl+S)">Save copy</button>
-        <button id="transcribe" class="primary" title="Type up new writing on this page now (Enter)">Transcribe</button>
-        <label class="toggle" title="Type up writing automatically when you pause">
-          <input id="auto-transcribe" type="checkbox" checked />
-          Auto
-        </label>
-        <button id="toggle-notes" title="Show or hide the notes panel">Notes</button>
-      </div>
-
-      <div class="group">
-        <button id="connect-relay" title="Receive the pen through the laptop relay (npm run relay)">Relay</button>
-        <button id="connect-bluetooth" title="Connect to the pen over Bluetooth (Chrome or Edge)">Bluetooth</button>
-        <button id="connect-serial" title="Connect over USB (Chrome or Edge)">USB</button>
-        <button id="connect-wifi" title="Fallback: connect straight to a pen hosting its own WebSocket server">WiFi</button>
-        <button id="load-recording" title="Replay a recorded .jsonl file">Load recording</button>
-        <input id="recording-file" type="file" accept=".jsonl,.txt,.json" hidden />
-      </div>
-
-      <div class="group" id="relay-indicators" hidden>
-        <span class="indicator" id="relay-indicator">Relay: not connected</span>
-        <span class="indicator" id="pen-indicator">Pen: offline</span>
-      </div>
-
-      <div class="group" id="bluetooth-indicators" hidden>
-        <span class="indicator" id="bluetooth-pen-indicator">Pen: offline</span>
-      </div>
-
-      <div class="status" id="status">Mouse ready</div>
-    </header>
-
     <main class="workspace">
-      <aside class="explorer" aria-label="Explorer">
-        <div class="explorer-head">
-          <span class="explorer-label">Explorer</span>
-          <button id="explorer-refresh" class="icon-button" title="Refresh the file list" aria-label="Refresh" hidden>↻</button>
-          <button id="explorer-open-file-small" class="head-button" title="Open one or more files">File</button>
-          <button id="explorer-open-folder" class="head-button" title="Open a folder">Folder</button>
+      <aside class="sidebar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 20l4-1 11-11-3-3L5 16z" /><path d="M14 7l3 3" /></svg>
+          </span>
+          Notechalant
         </div>
-        <div class="explorer-title" id="explorer-title">No folder open</div>
-        <div class="explorer-empty" id="explorer-empty">
-          <p id="explorer-empty-text"></p>
-          <button id="explorer-open" class="primary">Open Folder</button>
-          <button id="explorer-reopen" hidden>Reopen</button>
-          <button id="explorer-open-file">Open File</button>
-          <p class="explorer-hint">Or drop a file or folder anywhere on the page.</p>
+
+        <div class="explorer" aria-label="Explorer">
+          <div class="explorer-head">
+            <span class="explorer-label">Explorer</span>
+            <button id="explorer-refresh" class="icon-button" title="Refresh the file list" aria-label="Refresh" hidden>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7" /><path d="M20 4v7h-7" /></svg>
+            </button>
+            <button id="explorer-open-file-small" class="head-button" title="Open one or more files">File</button>
+            <button id="explorer-open-folder" class="head-button" title="Open a folder">Folder</button>
+          </div>
+          <div class="explorer-title" id="explorer-title">No folder open</div>
+          <div class="explorer-empty" id="explorer-empty">
+            <p id="explorer-empty-text"></p>
+            <button id="explorer-open" class="primary">Open Folder</button>
+            <button id="explorer-reopen" hidden>Reopen</button>
+            <button id="explorer-open-file">Open File</button>
+            <p class="explorer-hint">Or drop a file or folder anywhere on the page.</p>
+          </div>
+          <input id="open-file-input" type="file" multiple hidden />
+          <div class="explorer-tree" id="explorer-tree" hidden></div>
         </div>
-        <input id="open-file-input" type="file" multiple hidden />
-        <div class="explorer-tree" id="explorer-tree" hidden></div>
+
+        <div class="connection">
+          <span class="connection-label">Pen connection</span>
+          <div class="connection-grid" role="group" aria-label="Pen connection">
+            <button id="connect-relay" title="Receive the pen through the laptop relay (npm run relay)" aria-pressed="false">Relay</button>
+            <button id="connect-bluetooth" title="Connect to the pen over Bluetooth (Chrome or Edge)" aria-pressed="false">Bluetooth</button>
+            <button id="connect-serial" title="Connect over USB (Chrome or Edge)" aria-pressed="false">USB</button>
+            <button id="connect-wifi" title="Fallback: connect straight to a pen hosting its own WebSocket server" aria-pressed="false">WiFi</button>
+          </div>
+          <div class="group indicators" id="relay-indicators" hidden>
+            <span class="indicator" id="relay-indicator">Relay: not connected</span>
+            <span class="indicator" id="pen-indicator">Pen: offline</span>
+          </div>
+          <div class="group indicators" id="bluetooth-indicators" hidden>
+            <span class="indicator" id="bluetooth-pen-indicator">Pen: offline</span>
+          </div>
+          <button id="load-recording" class="btn" title="Replay a recorded .jsonl file">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2" /></svg>
+            <span class="label">Load recording</span>
+          </button>
+          <input id="recording-file" type="file" accept=".jsonl,.txt,.json" hidden />
+        </div>
       </aside>
 
       <section class="editor">
+        <header class="toolbar">
+          <div class="group" id="colors" role="group" aria-label="Pen color"></div>
+
+          <button id="undo" class="btn icon-only" title="Undo (Ctrl+Z)" aria-label="Undo">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
+          </button>
+          <button id="clear" class="btn" title="Clear page" aria-label="Clear">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18" /><path d="M8 6V4h8v2" /><path d="M19 6l-1 14H6L5 6" /></svg>
+            <span class="label">Clear</span>
+          </button>
+          <button id="save-copy" class="btn" title="Save a new file with the ink on it, next to the original. The original isn't changed (Ctrl+S)" aria-label="Save copy">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h10" /></svg>
+            <span class="label">Save copy</span>
+          </button>
+
+          <div class="toolbar-spacer"></div>
+
+          <div class="transcribe-group">
+            <button id="transcribe" class="btn" title="Type up new writing on this page now (Enter)">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5h16v2" /><path d="M12 5v14" /><path d="M9 19h6" /></svg>
+              <span class="label">Transcribe</span>
+            </button>
+            <label class="toggle" title="Type up writing automatically when you pause">
+              <input id="auto-transcribe" type="checkbox" checked />
+              Auto
+            </label>
+          </div>
+
+          <button id="toggle-notes" class="btn" title="Show or hide the notes panel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M15 4v16" /></svg>
+            <span class="label">Notes</span>
+          </button>
+        </header>
+
         <div class="tabs" id="tabs" role="tablist" aria-label="Open files"></div>
 
         <div class="stage" id="stage">
@@ -82,9 +114,16 @@
 
         <footer class="pagebar">
           <span class="pagebar-file" id="page-file"></span>
-          <button id="page-prev" title="Previous page (Page Up)" aria-label="Previous page">‹</button>
-          <span id="page-count"></span>
-          <button id="page-next" title="Next page (Page Down)" aria-label="Next page">›</button>
+          <span class="status" id="status" role="status">Mouse ready</span>
+          <div class="pagenav">
+            <button id="page-prev" title="Previous page (Page Up)" aria-label="Previous page">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 6-6 6 6 6" /></svg>
+            </button>
+            <span id="page-count"></span>
+            <button id="page-next" title="Next page (Page Down)" aria-label="Next page">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 6 6 6-6 6" /></svg>
+            </button>
+          </div>
           <span class="pagebar-save" id="save-state"></span>
         </footer>
       </section>

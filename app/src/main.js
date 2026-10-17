@@ -173,6 +173,9 @@ function captureInk() {
 
 // Draws the active tab's current page and puts its ink on the canvas.
 function showPage() {
+  // Notebook lines on the whiteboard only. Real documents stay plain white. Set here rather than
+  // in activate() so closing a tab that falls back to the whiteboard gets its lines too.
+  document.getElementById('page').classList.toggle('whiteboard', activeTab === whiteboard);
   const scale = pageView.show(activeTab.doc, activeTab.page);
   placeInk(scale);
 }
