@@ -43,7 +43,7 @@ const SKETCH_THUMB_SIDE = 480;
 // tutor is { review(text, context, seen), ask(text, context, thread, seen) } (tutor/tutorClient.js).
 // snapshot(tab, page) resolves to what the tutor can see of that page (tutor/pageSnapshot.js),
 // or null when the page isn't the one on screen. cleanUp swaps handwriting for typed text (main.js).
-export function createNotesController({ getActiveTab, getFolder, isWriting, lastInkChangeAt, goToPage, recognize, cleanUp, tutor, snapshot, idleMs, onStatus, onBusyChange }) {
+export function createNotesController({ getActiveTab, getFolder, isWriting, lastInkChangeAt, goToPage, recognize, cleanUp, tutor, snapshot, idleMs, onStatus, onBusyChange = function () {} }) {
   let auto = true;
   let autoCleanUp = false;
   // Tutor mode: every new transcription is also checked by the tutor.

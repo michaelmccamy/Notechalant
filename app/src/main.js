@@ -57,9 +57,7 @@ const TICK_MS = 250;
 // How long the pen has to stay still before new writing is typed up. Gemini answers in about
 // a second, so this wait was most of the delay. Raise it if words get read half finished.
 const TRANSCRIBE_IDLE_MS = 1200;
-const AUTO_KEY = 'notechalant.autoTranscribe';
 const AUTO_CLEANUP_KEY = 'notechalant.autoCleanUp';
-const SNAP_KEY = 'notechalant.snapShapes';
 const ASK_KEY = 'notechalant.askMode';
 const NOTES_SHOWN_KEY = 'notechalant.notesShown';
 const TUTOR_KEY = 'notechalant.tutor';
@@ -237,9 +235,6 @@ const notes = createNotesController({
   onStatus: function (text, isError) {
     toolbar.setStatus(text, isError);
   },
-  onBusyChange: function (isBusy) {
-    toolbar.setTranscribing(isBusy);
-  },
 });
 
 // Corner calibration: point at the page's four corners in turn and tap the pad (or press
@@ -395,6 +390,19 @@ function showNotes(isShown) {
   document.body.classList.toggle('notes-hidden', !isShown);
   toolbar.setNotesShown(isShown);
   saveSetting(NOTES_SHOWN_KEY, isShown ? 'on' : 'off');
+}
+
+// Ask on: the pen aims like a laser pointer, for circling something from across the room.
+// Ask off: writing mode (motion/index.js), where the pen moves the ink like a mouse, smaller and
+// steadier.
+function setAsk(isOn) {
+  askOn = isOn;
+  motion.config.writingMode = !isOn;
+}
+
+function transcribeNow() {
+  captureInk();
+  notes.transcribeNow();
 }
 
 // Tutor feedback shows in the notes panel, so turning the tutor on opens the panel too.
@@ -878,36 +886,19 @@ const toolbar = createToolbar({
 
   onSaveCopy: saveCopy,
 
-  onTranscribe: function () {
-    captureInk();
-    notes.transcribeNow();
-  },
-
   onAskChange: function (isOn) {
-    askOn = isOn;
+    setAsk(isOn);
     saveSetting(ASK_KEY, isOn ? 'on' : 'off');
     if (!isOn) {
       circleToAsk.dismiss();
     }
-    toolbar.setStatus(isOn ? 'Ask on: circle part of the page to get it explained' : 'Ask off: circles are just ink');
-  },
-
-  onSnapChange: function (isOn) {
-    ink.setSnap(isOn ? snapStroke : null);
-    saveSetting(SNAP_KEY, isOn ? 'on' : 'off');
-    toolbar.setStatus(isOn ? 'Snap on: rough lines, circles, and boxes come out clean' : 'Snap off');
+    toolbar.setStatus(isOn ? 'Ask on: point at something and circle or underline it' : 'Ask off: circles are just ink');
   },
 
   onAutoCleanUpChange: function (isOn) {
     notes.setAutoCleanUp(isOn);
     saveSetting(AUTO_CLEANUP_KEY, isOn ? 'on' : 'off');
-    toolbar.setStatus(isOn ? 'Clean up on: after a pause, handwriting turns into typed text' : 'Clean up off. Transcribe still cleans up');
-  },
-
-  onAutoChange: function (isOn) {
-    notes.setAuto(isOn);
-    saveSetting(AUTO_KEY, isOn ? 'on' : 'off');
-    toolbar.setStatus(isOn ? 'Auto transcribe on' : 'Auto transcribe off. Press Transcribe or Enter');
+    toolbar.setStatus(isOn ? 'Clean up on: after a pause, handwriting turns into typed text' : 'Clean up off. Enter still cleans up');
   },
 
   onToggleNotes: function () {
@@ -1259,7 +1250,7 @@ window.addEventListener('keydown', function (event) {
     startCornerCalibration();
   } else if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) {
     event.preventDefault();
-    toolbar.buttons.transcribe.click();
+    transcribeNow();
   }
 });
 
@@ -1282,7 +1273,7 @@ window.addEventListener('blur', function () {
 const SETUPS = {
   // Writing test: Write and Snap on, nothing else changing the page, a little smaller ink.
   'writing-test': {
-    toggles: { [SNAP_KEY]: 'on', [AUTO_CLEANUP_KEY]: 'off', [AUTO_KEY]: 'off', [ASK_KEY]: 'off', [TUTOR_KEY]: 'off' },
+    toggles: { [AUTO_CLEANUP_KEY]: 'off', [ASK_KEY]: 'off', [TUTOR_KEY]: 'off' },
     motion: { pointerMode: true, writingGain: 0.45, writingString: 4, writingCurve: 0 },
   },
 };
@@ -1304,19 +1295,14 @@ if (setupName !== null) {
 
 notes.attach(whiteboard);
 activate(whiteboard);
-const autoOn = loadSetting(AUTO_KEY) !== 'off';
-toolbar.setAuto(autoOn);
-notes.setAuto(autoOn);
-askOn = loadSetting(ASK_KEY) === 'on';
-toolbar.setAsk(askOn);
-const snapOn = loadSetting(SNAP_KEY) !== 'off';
-toolbar.setSnap(snapOn);
-ink.setSnap(snapOn ? snapStroke : null);
-// Writing mode is always on (motion/index.js): the pen moves the ink like a mouse, drawn smaller
-// and steadier, and each stroke is smoothed when the pen lifts. The input hub keeps the lazy
-// brush's string length in step with the D panel's slider.
-motion.config.writingMode = true;
+// Always on: writing is typed up after each pause (Enter does it now), and rough lines, circles,
+// and boxes snap clean (Undo brings back what was drawn). Each stroke is smoothed when the pen
+// lifts. The input hub keeps the lazy brush's string length in step with the D panel's slider.
+notes.setAuto(true);
+ink.setSnap(snapStroke);
 ink.setSmoother(smoothStroke);
+setAsk(loadSetting(ASK_KEY) === 'on');
+toolbar.setAsk(askOn);
 const autoCleanUpOn = loadSetting(AUTO_CLEANUP_KEY) === 'on';
 toolbar.setAutoCleanUp(autoCleanUpOn);
 notes.setAutoCleanUp(autoCleanUpOn);

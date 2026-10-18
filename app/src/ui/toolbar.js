@@ -16,9 +16,7 @@ export function createToolbar(handlers) {
   const statusEl = document.getElementById('status');
   const colorsEl = document.getElementById('colors');
   const fileInput = document.getElementById('recording-file');
-  const autoInput = document.getElementById('auto-transcribe');
   const autoCleanUpInput = document.getElementById('auto-cleanup');
-  const snapInput = document.getElementById('snap-shapes');
   const askInput = document.getElementById('ask-mode');
   const relayIndicators = document.getElementById('relay-indicators');
   const relayIndicator = document.getElementById('relay-indicator');
@@ -32,7 +30,6 @@ export function createToolbar(handlers) {
     undo: document.getElementById('undo'),
     clear: document.getElementById('clear'),
     saveCopy: document.getElementById('save-copy'),
-    transcribe: document.getElementById('transcribe'),
     notes: document.getElementById('toggle-notes'),
     tutor: document.getElementById('toggle-tutor'),
     serial: document.getElementById('connect-serial'),
@@ -108,20 +105,13 @@ export function createToolbar(handlers) {
   buttons.undo.addEventListener('click', handlers.onUndo);
   buttons.clear.addEventListener('click', handlers.onClear);
   buttons.saveCopy.addEventListener('click', handlers.onSaveCopy);
-  buttons.transcribe.addEventListener('click', handlers.onTranscribe);
   buttons.notes.addEventListener('click', handlers.onToggleNotes);
   buttons.tutor.addEventListener('click', handlers.onToggleTutor);
   askInput.addEventListener('change', function () {
     handlers.onAskChange(askInput.checked);
   });
-  snapInput.addEventListener('change', function () {
-    handlers.onSnapChange(snapInput.checked);
-  });
   autoCleanUpInput.addEventListener('change', function () {
     handlers.onAutoCleanUpChange(autoCleanUpInput.checked);
-  });
-  autoInput.addEventListener('change', function () {
-    handlers.onAutoChange(autoInput.checked);
   });
   buttons.relay.addEventListener('click', handlers.onRelay);
   buttons.bluetooth.addEventListener('click', handlers.onBluetooth);
@@ -187,11 +177,6 @@ export function createToolbar(handlers) {
     bluetoothPenIndicator.classList.toggle('ok', status.connected);
   }
 
-  function setTranscribing(isBusy) {
-    buttons.transcribe.disabled = isBusy;
-    setLabel(buttons.transcribe, isBusy ? 'Reading…' : 'Transcribe');
-  }
-
   function setSavingCopy(isBusy) {
     buttons.saveCopy.disabled = isBusy;
     setLabel(buttons.saveCopy, isBusy ? 'Saving…' : 'Save copy');
@@ -201,16 +186,8 @@ export function createToolbar(handlers) {
     askInput.checked = isOn;
   }
 
-  function setSnap(isOn) {
-    snapInput.checked = isOn;
-  }
-
   function setAutoCleanUp(isOn) {
     autoCleanUpInput.checked = isOn;
-  }
-
-  function setAuto(isOn) {
-    autoInput.checked = isOn;
   }
 
   // The remote is its own connection, so it can be on at the same time as a pen source.
@@ -240,11 +217,8 @@ export function createToolbar(handlers) {
     setActiveSource,
     setRelayStatus,
     setBluetoothStatus,
-    setTranscribing,
     setSavingCopy,
-    setAuto,
     setAutoCleanUp,
-    setSnap,
     setAsk,
     setNotesShown,
     setTutorOn,

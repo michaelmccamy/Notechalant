@@ -341,6 +341,15 @@ body.notes-hidden .notes {
   border-radius: 10px;
 }
 
+.connection-grid.single {
+  grid-template-columns: 1fr;
+}
+
+/* The small File and Folder buttons repeat the big ones while nothing is open. */
+.explorer:has(#explorer-empty:not([hidden])) .explorer-head .head-button {
+  display: none;
+}
+
 .connection-grid button {
   padding: 7px 0;
   border: none;
