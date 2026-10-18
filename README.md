@@ -1,117 +1,134 @@
 # Notechalant
 
-Turn any screen into a whiteboard you can write on from anywhere in the room, for about $25 in parts.
+Write on any screen from across the room. Circle anything to get it explained.
 
-A pen with a motion sensor streams its rotation to a laptop app. The app turns small wrist movements into a cursor, draws ink while a finger is on the touch pad, and turns the writing into typed text or math.
+Notechalant is a pen with a motion sensor and a touch pad, plus a browser app. Hold your finger on the pad and write in the air: the ink appears on the page, turns into typed text and math, and goes into your notes. Circle a question on a slide and an answer card pops up next to it, or turn on Tutor and get a hint instead.
 
 ```
-MPU6050 -> XIAO ESP32-S3 -> Bluetooth LE -> browser app -> recognition -> output
+MPU6050 + touch pad -> XIAO ESP32-S3 -> Bluetooth LE -> browser app -> Gemini -> typed notes, answers, hints
 ```
 
-Built at SwampHacks XII.
+Built at SwampHacks XII, for about $25 in parts.
 
-## Repo layout
+## The demo
 
-| Path | What lives there | Owner |
-|---|---|---|
-| `docs/data-format.md` | The sample format every part of the system agrees on | Everyone |
-| `firmware/stm32-test/` | Tonight's USB serial test on the STM32 | CpE 1 |
-| `firmware/esp32/` | Bluetooth, WiFi, and USB firmware for the real pen | CpE 1 |
-| `firmware/remote/` | Arduino UNO that turns the Elegoo kit's IR remote into a clicker for the app | Anyone |
-| `data/recordings/` | Recorded pen data (`.jsonl`) for testing without hardware | CpE 1 |
-| `app/src/motion/` | Gyro to cursor movement, calibration, smoothing | CpE 2 |
-| `app/src/` (everything else) | Canvas, inputs, slides, toolbar | CS |
-| `server/` | Recognition endpoint that keeps the API key off the frontend | CpE 3 |
-| `relay/` | WebSocket relay from the pen to the app, plus a fake pen for testing | CpE 1 |
-| `tools/` | Small scripts, like the synthetic data generator | Anyone |
+1. **Write.** Write `2x + 3 = 7` in the air. A moment after you pause, the handwriting turns into typed math on the page, and the same text appears in the Notes panel.
+2. **Circle to ask.** Turn on **Ask**, point at a problem on the slides (`data/samples/demo-slides.pdf`), and circle or underline it. A large card next to it walks through the answer.
+3. **Get a hint instead.** Turn on **Tutor** and do the same. The card gives a hint rather than the answer, and a conversation starts in Notes, where you can reply ("is it 2 and 3?") and keep going.
+4. **Start fresh.** Triple tap the pad to clear the page. Undo brings it back.
 
-Stay inside your own folder when you can. It keeps merge conflicts close to zero.
+## What it does
+
+**Writing**
+- The pen writes like a mouse: the ink moves by how much you turn the pen, so your hand can stay in one comfortable place. Ink is drawn smaller and steadier than your hand moves, and each stroke is smoothed when you lift the pen.
+- With **Ask** on, the pen aims like a laser pointer instead, so you can point at something on a slide and circle it.
+- **Clean up** (switch): rough lines, circles, and boxes snap to clean ones, and after a pause your handwriting is replaced by typed text, with math typeset. Undo brings back what you drew.
+- **Auto** (switch): after each pause, new writing is typed up into the Notes panel. With it off, press **Enter**.
+- **Eraser** (button or **E**) removes strokes and typed words it passes over.
+
+**Asking and the tutor**
+- **Ask** (switch): circling or underlining something sends a picture of it to Gemini, and the answer shows in a card next to it, big enough to read from across a room. It's also saved in the notes.
+- **Tutor** (button): with it on, asking gives hints instead of answers, and the tutor also reads what you write, pointing out grammar, spelling, math, and fact mistakes with one-click fixes. You can ask it about any note, or about the whole page.
+
+**Files and notes**
+- Write on the whiteboard, or open a folder or file: PDF, Word, PowerPoint, Excel, text, Markdown, CSV, JSON, and images. Your files are never changed. Ink is saved next to them in a `.notechalant/` folder.
+- **Save copy** makes a new file with your ink on it: the PDF with vector ink, an image in the same format, or a PDF of the pages for everything else.
+- The **Notes** panel holds the typed-up text for each file, in page order. Click a note to edit it. **Copy**, **Export .md**, and **Clear** are at the top.
+- **Present mode** (**P**) hides everything but the page. The IR remote can change colors, sizes, pages, and tabs, and toggle present mode.
+
+## Hardware
+
+| Part | Notes |
+|---|---|
+| Seeed XIAO ESP32-S3 | Reads the sensor and pad at 100 Hz, sends over Bluetooth LE and USB |
+| MPU6050 | Gyro and accelerometer, on I2C (SDA to D4, SCL to D5) |
+| Touch pad | Bare metal (a jumper pin or copper tape) wired to D1. The pen is down while a finger touches it |
+| Arduino UNO + IR remote (optional) | A clicker for the app |
+
+Wiring, flashing, and touch pad tuning are in `firmware/esp32/README.md`. The remote is in `firmware/remote/README.md`.
 
 ## Running it
 
-You need Node 20 or newer and Chrome or Edge (Web Serial does not work in Firefox or Safari).
+You need Node 20 or newer, and Chrome or Edge (Web Bluetooth doesn't work in Firefox or Safari).
 
 ```bash
+# 1. The app
 cd app
 npm install
 npm run dev
-```
 
-Open the URL Vite prints. Draw with the mouse to check the canvas, then click **Load recording** and pick `data/recordings/synthetic/shapes.jsonl` to watch the full pen pipeline run with no hardware.
-
-`npm test` checks the sample parser and the motion math.
-
-For recognition, run the server in a second terminal.
-
-```bash
+# 2. Recognition, in a second terminal
 cd server
 cp .env.example .env     # then put your Gemini key and model in .env
 npm start
 ```
 
-The app's dev server forwards `/api` requests to it on port 8787.
+Open the URL Vite prints. The app forwards `/api` requests to the server on port 8787, which keeps the API key off the page. You can draw with the mouse without the pen.
 
-### Running with Bluetooth
+### Connecting the pen
 
-This is the main wireless path. It needs no WiFi network, only the app.
+1. Flash `firmware/esp32` with `WIFI_SSID` set to `""` in `secrets.h`. Power the pen from USB or a battery. Don't touch the pad while it boots: it measures the pad's resting value first. Its LED blinks while it waits for the app.
+2. Click **Connect pen** and pick **Notechalant Pen** in the chooser.
+3. Hold the pen still for about 2 seconds while the card on the page says to. Moving restarts it.
+4. Press **K** (or **Calibrate screen**) and point at the page's four corners, tapping the pad at each one. Keep your hand in one place and tilt the pen to aim. Ask mode uses this to aim, and writing uses it for its scale.
 
-1. Flash `firmware/esp32` with `WIFI_SSID` set to `""` in `secrets.h` (see `firmware/esp32/README.md`). Power the pen from USB or a battery. Its LED blinks while it waits for the app.
-2. Open the app in Chrome or Edge and click **Bluetooth**. Pick **Notechalant Pen** in the chooser.
-3. The toolbar shows `Pen: online, ~100/s` and the LED goes solid. Hold the pen still for a moment to calibrate.
+If the pen drops out, the app reconnects on its own. On a Mac, Chrome needs Bluetooth permission: **System Settings > Privacy & Security > Bluetooth**, turn on Chrome, then quit and reopen it.
 
-If the pen loses power or goes out of range, the app reconnects to it on its own, without the chooser. Reloading the page means picking it again. Click **Bluetooth** again to turn it off.
+## Controls
 
-On a Mac, Chrome needs Bluetooth permission: **System Settings > Privacy & Security > Bluetooth**, turn on Google Chrome (or Edge), then quit and reopen the browser. Without it the chooser never finds the pen. The binary format and UUIDs are in `docs/data-format.md`.
+| Pen | Does |
+|---|---|
+| Finger on the pad | Pen down: draw |
+| Double tap | Recenter: the cursor jumps to where the pen points |
+| Triple tap | Clear the page (Undo brings it back) |
 
-### Running with the relay
+| Key | Does |
+|---|---|
+| **Enter** | Type up new writing now |
+| **K** | Calibrate the screen corners |
+| **R** | Recalibrate the gyro (hold still), if the cursor drifts |
+| **C** | Recenter |
+| **E** | Eraser on or off |
+| **P** | Present mode, **Esc** leaves it |
+| **Ctrl/Cmd+Z** | Undo |
+| **Ctrl/Cmd+S** | Save a copy with the ink on it |
+| **Page Up / Page Down** | Previous or next page |
+| **Space** (hold) | Pen down, for testing without the pad |
+| **D** | Debug panel: live gyro graphs, recording, and tuning sliders (writing gain, string length, travel speed) |
 
-The pen sends its data over WiFi to a small relay on the laptop, and the app reads from the relay. Use three terminals.
+## How it works
 
-```bash
-# 1. Relay. Prints the URL the ESP32 should connect to.
-cd relay
-npm install
-npm run relay
+- **Motion** (`app/src/motion/`). The gyro's bias is measured while the pen is still. Gravity from the accelerometer gives up and down, so rolling the pen in your hand doesn't mix up the directions. Corner calibration maps where the pen points onto the page with a homography, so pointing works from any distance or angle. For writing, turns are scaled down and moved like a mouse, with acceleration when the pen is lifted.
+- **Ink** (`app/src/ink/`). A lazy brush (the ink trails the cursor on a short string) removes wobble, strokes get a Catmull-Rom curve fit when the pen lifts, and shapes snap to lines, ellipses, and rectangles.
+- **Recognition** (`server/`, or `api/` on Vercel). New strokes go to Gemini as a picture and come back as text, with math as LaTeX. Circle to ask and the tutor send a picture of what you marked, plus the page for context.
+- **Testing on real data** (`data/recordings/debug/`). The debug panel's **Record** saves raw pen data. `tools/stroke-straightness.mjs` replays recordings through the motion code to compare settings, and `npm test` in `app/` runs the motion, ink, gesture, and notes tests.
 
-# 2. Fake pen, if the hardware isn't ready. Draws loops, pen down 2s, up 1s.
-cd relay
-npm run fakepen
+## Repo layout
 
-# 3. App
-cd app
-npm run dev
-```
-
-Open the app and click **Relay**. The toolbar shows whether the relay and pen are connected, and the pen's sample rate, which should be about 100/s. If the relay or the pen restarts, the app reconnects on its own. Click **Relay** again to turn it off.
-
-For the real pen, skip step 2. The laptop and ESP32 must be on the same WiFi network, and the firmware connects to the pen URL for that network, which the relay prints for each interface. Skip VPN interfaces like `utun` (Tailscale), since the ESP32 can't reach them. On a Mac, run `ipconfig getifaddr en0` to confirm your WiFi address. See `docs/data-format.md` for why this is the main WiFi path.
+| Path | What's there |
+|---|---|
+| `app/` | The browser app (Vite) and its tests |
+| `server/` | Recognition, explain, and tutor endpoints for local use |
+| `api/` | The same endpoints as Vercel functions |
+| `firmware/esp32/` | The pen's firmware |
+| `firmware/remote/` | The IR remote's Arduino sketch |
+| `relay/` | WebSocket relay for the WiFi path, plus a fake pen |
+| `data/recordings/` | Recorded pen data for testing without hardware |
+| `data/samples/` | `demo-slides.pdf`, the slides for the demo (`tools/make-demo-slides.mjs` builds them) |
+| `docs/data-format.md` | The sample format and the Bluetooth protocol |
+| `tools/` | Scripts: demo slides, synthetic data, stroke analysis |
 
 ## Deploying to Vercel
 
-`vercel.json` builds the app from `app/` and serves `api/recognize.mjs` as a function that uses the same Gemini code as `server/`. In the Vercel project, set the environment variables `GEMINI_API_KEY` and `GEMINI_MODEL`, then open `/api/health` on the deployed site to check them.
+`vercel.json` builds the app from `app/` and serves `api/` as functions using the same Gemini code as `server/`. In the Vercel project, set `GEMINI_API_KEY` and `GEMINI_MODEL`, then open `/api/health` on the deployed site to check them. Bluetooth works from the deployed page.
 
-The relay can't run on Vercel, so keep running `npm run relay` on the laptop. The deployed page still connects to it at `ws://localhost:8080/app`. Chrome may ask once to allow local network access. **USB** works too. **WiFi** direct does not, because browsers block `ws://` to the pen's own network from an `https` page.
+## Other inputs, for development
 
-## Inputs
+The debug panel (**D**) has buttons for inputs used while building it:
 
-All hardware inputs end up calling the same function, `onPenData(sample)`, in `app/src/input/hub.js`.
+- **Load recording** replays a `.jsonl` file at real speed, to test the whole pipeline with no hardware. Try `data/recordings/synthetic/shapes.jsonl`.
+- **USB** reads the pen over Web Serial at 115200 baud.
+- **Relay** reads the pen through `relay/` over WiFi (`cd relay && npm run relay`, and `npm run fakepen` for a fake one). The pen needs a WiFi network in `secrets.h`. See `docs/data-format.md`.
+- **WiFi** connects straight to a WebSocket server on the pen, as a fallback.
 
-- **Mouse** draws directly on the canvas. Use it to test anything ink related.
-- **Load recording** replays a `.jsonl` file at real speed. This tests the full pipeline with no hardware.
-- **Relay** receives the pen through `relay/relay.js` and reconnects on its own. This is the main WiFi path.
-- **Bluetooth** connects to the pen over Bluetooth Low Energy and reconnects on its own. This is the main wireless path.
-- **USB** connects to the STM32 or ESP32 over Web Serial at 115200 baud.
-- **WiFi** connects straight to a WebSocket server on the ESP32. This is the fallback, if the pen hosts its own network.
-- **Remote** connects the IR remote's Arduino over Web Serial. It runs alongside whichever pen input is on and changes colors, pen sizes, pages and tabs, moves through the explorer, and toggles present mode. See `firmware/remote/README.md` for the buttons.
-
-Hold **Space** to force pen down. This stands in for the pen's touch pad, for example while tuning motion without the hardware.
-
-Press **C** to recenter the cursor and **R** to recalibrate the motion module. Press **P** to enter or leave present mode, which hides everything but the page, and **Esc** to leave it.
-
-Press **D** for the motion debug panel: live gyro graphs, a cursor trail, an axis wizard, tuning sliders, and a **Record** button that saves debug files for `data/recordings/debug/`.
-
-## Workflow
-
-- Branch per person (`firmware`, `motion`, `app`, `recognition`), merge to `main` often.
-- Commit with real messages. Judges read the history.
-- Never commit `.env` or API keys. It's already in `.gitignore`.
+Never commit `.env` or `secrets.h`. Both are in `.gitignore`.
