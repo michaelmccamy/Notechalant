@@ -30,7 +30,7 @@ import { strokesToPng } from './strokeImage.js';
 import { strokesSignature } from '../ink/inkItems.js';
 import { isJustMarks } from '../ink/shapes.js';
 import { createNotesPanel } from './notesPanel.js';
-import { emptyTutor, worthReviewing, applyFix, resolveIssue, addMessage } from '../tutor/tutorData.js';
+import { emptyTutor, validSketch, worthReviewing, applyFix, resolveIssue, addMessage } from '../tutor/tutorData.js';
 
 const CONTEXT_CHARS = 400;
 const TUTOR_CONTEXT_CHARS = 1200;
@@ -382,14 +382,16 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     sendThread(tab, block);
   }
 
-  async function sendThread(tab, block) {
+  // sketch, if given, is a sharper picture to send than the note's thumbnail. Resolves to the
+  // reply, or null if it failed.
+  async function sendThread(tab, block, sketch) {
     block.tutor.pending = true;
     block.tutor.error = '';
     showTutor(tab);
     const thread = block.tutor.thread;
     let reply;
     try {
-      const seen = { sketch: block.sketch || null, page: await snapshot(tab, block.page) };
+      const seen = { sketch: sketch || block.sketch || null, page: await snapshot(tab, block.page) };
       reply = await tutor.ask(block.text, contextBefore(tab.notes, block.id, TUTOR_CONTEXT_CHARS), thread, seen);
     } catch (err) {
       reply = err;
@@ -406,6 +408,38 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     block.tutor.pending = false;
     showTutor(tab);
     save(tab);
+    return reply instanceof Error ? null : reply;
+  }
+
+  // The stroke just used to ask (a circle or an underline) isn't writing, so transcription skips
+  // it. Only when it's the one new stroke, so writing just before it still gets read.
+  function skipLastStroke(tab, page) {
+    if (!tab.notes) {
+      return;
+    }
+    const strokes = tab.ink[page] || [];
+    if (untranscribed(tab.notes, page, strokes).length === 1) {
+      markTranscribed(tab.notes, page, strokes.length, strokes.length);
+      save(tab);
+    }
+  }
+
+  // Circle to ask with Tutor on: something circled or underlined on the page becomes a tutor
+  // conversation in the notes, with a thumbnail of it, so follow-up questions can go under it.
+  // image is the sharp picture the tutor reads, thumb the one kept with the note. Resolves to
+  // the tutor's first reply.
+  function askAboutPicture(tab, page, question, image, thumb) {
+    const block = addBlock(tab.notes, question, page);
+    block.asked = true;
+    block.sketch = validSketch(thumb);
+    block.tutor = emptyTutor();
+    addMessage(block.tutor, 'student', question);
+    return sendThread(tab, block, image).then(function (reply) {
+      if (reply === null) {
+        throw new Error(block.tutor ? block.tutor.error : 'The tutor had no answer');
+      }
+      return reply;
+    });
   }
 
   function showTutor(tab) {
@@ -481,7 +515,7 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     autoCleanUp = isOn;
   }
 
-  return { attach, show, tick, transcribeNow, addNote, setAuto, setAutoCleanUp, setTutor, onHandwritingRestored };
+  return { attach, show, tick, transcribeNow, addNote, askAboutPicture, skipLastStroke, setAuto, setAutoCleanUp, setTutor, onHandwritingRestored };
 }
 
 // Identifies one attempt: which file, which page, how many strokes. A failed attempt isn't

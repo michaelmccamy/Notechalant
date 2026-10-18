@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { snapStroke, isClosedLoop, isJustMarks } from '../src/ink/shapes.js';
+import { snapStroke, isClosedLoop, isJustMarks, underlineOf } from '../src/ink/shapes.js';
 
 // Seeded wobble, so a "hand drawn" stroke is the same every run.
 let seed = 7;
@@ -131,4 +131,15 @@ test('underlines and circles are marks, writing is not', function () {
   assert.equal(isJustMarks([stroke(s)]), false, 'an S');
   assert.equal(isJustMarks([handLine(0, 0, 10, 0, 0.5)]), false, 'a short dash could be a minus sign');
   assert.equal(isJustMarks([]), false);
+});
+
+test('an underline is a long, nearly level, straight stroke', function () {
+  const under = underlineOf(handLine(100, 300, 420, 312, 2).points);
+  assert.ok(under !== null, 'slightly tilted underline');
+  assert.ok(Math.abs(under.x0 - 100) < 5 && Math.abs(under.x1 - 420) < 5 && Math.abs(under.y - 306) < 5);
+  assert.ok(underlineOf(handLine(420, 300, 100, 300, 2).points) !== null, 'drawn right to left');
+  assert.equal(underlineOf(handLine(100, 100, 100, 400, 2).points), null, 'a down stroke');
+  assert.equal(underlineOf(handLine(0, 0, 200, 200, 2).points), null, 'a diagonal');
+  assert.equal(underlineOf(handLine(0, 0, 40, 0, 1).points), null, 'too short, like a minus sign');
+  assert.equal(underlineOf(handEllipse(200, 200, 100, 10, 1).points), null, 'a flat loop is not straight');
 });

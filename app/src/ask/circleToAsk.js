@@ -1,15 +1,18 @@
-// Circle to ask. With Ask on, circling part of the page sends a picture of what's inside the
-// loop (the document and any ink on it) to /api/explain, and shows the answer in a large card
-// next to the circle, readable from across a room. Math renders with KaTeX. A tap on the pad
-// (or a click), Esc, or the close button dismisses the card. ask() resolves to the answer, so
-// main.js can add it to the notes.
+// Circle to ask. With Ask on, circling or underlining part of the page captures a picture of
+// that region (the document and any ink on it) and shows the answer in a large card next to it,
+// readable from across a room. Math renders with KaTeX. A tap on the pad (or a click), Esc, or
+// the close button dismisses the card.
+//
+// Where the answer comes from is up to main.js: explainImage() below for a full walkthrough,
+// or the tutor for hints. ask() takes the region and a function that turns the pictures into
+// { about, text }.
 
-import { strokeBox } from '../ink/shapes.js';
 import { renderMarkdown, hasMath } from '../notes/markdown.js';
 import { loadKatex, MATH_OPTIONS } from '../notes/katex.js';
 
-const PADDING = 12; // px of page around the loop, so the edges of what was circled aren't cut
+const PADDING = 12; // px of page around the region, so the edges of what was marked aren't cut
 const MAX_SIDE = 1200; // the picture is scaled down to this, big enough to read small print
+const THUMB_SIDE = 480; // the thumbnail kept with a tutor note
 const CARD_GAP = 24;
 
 // handlers: onStatus(text, isError)
@@ -30,22 +33,22 @@ export function createCircleToAsk(stageEl, pageEl, handlers) {
     cardEl.hidden = true;
   }
 
-  // stroke is the loop, in page pixels. Resolves to { about, text }, or null if it failed or
-  // the card was dismissed first.
-  async function ask(stroke) {
+  // box is the marked region in page pixels ({ minX, minY, maxX, maxY }). answer({ image,
+  // thumb }) resolves to { about, text }. Resolves to that answer, or null if it failed or the
+  // card was dismissed first.
+  async function ask(box, answer, loadingText) {
     const id = ++asking;
-    const box = strokeBox(stroke.points);
-    showCard(box, 'Reading what you circled…', null);
-    let image;
+    showCard(box, loadingText || 'Reading what you marked…', null);
+    let pictures;
     try {
-      image = await capture(box);
+      pictures = await capture(box);
     } catch (err) {
       showError(id, "Couldn't capture that part of the page: " + err.message);
       return null;
     }
-    let answer;
+    let result;
     try {
-      answer = await requestExplanation(image);
+      result = await answer(pictures);
     } catch (err) {
       showError(id, err.message);
       return null;
@@ -53,8 +56,8 @@ export function createCircleToAsk(stageEl, pageEl, handlers) {
     if (id !== asking) {
       return null;
     }
-    showCard(box, answer.about || 'Answer', answer.text);
-    return answer;
+    showCard(box, result.about || 'Answer', result.text);
+    return result;
   }
 
   function showError(id, message) {
@@ -65,7 +68,7 @@ export function createCircleToAsk(stageEl, pageEl, handlers) {
     handlers.onStatus(message, true);
   }
 
-  // The whole page as a picture, the same way Save copy does it, cropped to the loop's box.
+  // The whole page as a picture, the same way Save copy does it, cropped to the region.
   async function capture(box) {
     const htmlToImage = await import('html-to-image');
     const ratio = window.devicePixelRatio || 1;
@@ -82,35 +85,20 @@ export function createCircleToAsk(stageEl, pageEl, handlers) {
     const top = Math.max(0, box.minY - PADDING);
     const right = Math.min(pageEl.clientWidth, box.maxX + PADDING);
     const bottom = Math.min(pageEl.clientHeight, box.maxY + PADDING);
-    const width = (right - left) * ratio;
-    const height = (bottom - top) * ratio;
-    const scale = Math.min(1, MAX_SIDE / Math.max(width, height));
-    const crop = document.createElement('canvas');
-    crop.width = Math.max(1, Math.round(width * scale));
-    crop.height = Math.max(1, Math.round(height * scale));
-    crop.getContext('2d').drawImage(full, left * ratio, top * ratio, width, height, 0, 0, crop.width, crop.height);
-    return crop.toDataURL('image/png');
+    const source = [left * ratio, top * ratio, (right - left) * ratio, (bottom - top) * ratio];
+    return { image: crop(full, source, MAX_SIDE), thumb: crop(full, source, THUMB_SIDE) };
   }
 
-  async function requestExplanation(image) {
-    const response = await fetch('/api/explain', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image: image }),
-    });
-    const body = await response.json().catch(function () {
-      return null;
-    });
-    if (!response.ok) {
-      if (body !== null && body.error) {
-        throw new Error(body.error);
-      }
-      throw new Error(response.status === 404 || response.status >= 500 ? 'Recognition server not reachable. Run npm start in server/' : 'Asking failed (' + response.status + ')');
-    }
-    return { about: (body.about || '').replace(/\.$/, ''), text: body.text || '' };
+  function crop(full, [x, y, width, height], maxSide) {
+    const scale = Math.min(1, maxSide / Math.max(width, height));
+    const out = document.createElement('canvas');
+    out.width = Math.max(1, Math.round(width * scale));
+    out.height = Math.max(1, Math.round(height * scale));
+    out.getContext('2d').drawImage(full, x, y, width, height, 0, 0, out.width, out.height);
+    return out.toDataURL('image/png');
   }
 
-  // Next to the loop: to its right if there's room, else its left, else over it.
+  // Next to the region: to its right if there's room, else its left, else over it.
   function showCard(box, title, text) {
     titleEl.replaceChildren();
     renderMarkdown(title, titleEl);
@@ -152,4 +140,23 @@ export function createCircleToAsk(stageEl, pageEl, handlers) {
   }
 
   return { ask, isOpen, dismiss };
+}
+
+// The full explanation: /api/explain, a step-by-step walkthrough with the answer.
+export async function explainImage(image) {
+  const response = await fetch('/api/explain', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: image }),
+  });
+  const body = await response.json().catch(function () {
+    return null;
+  });
+  if (!response.ok) {
+    if (body !== null && body.error) {
+      throw new Error(body.error);
+    }
+    throw new Error(response.status === 404 || response.status >= 500 ? 'Recognition server not reachable. Run npm start in server/' : 'Asking failed (' + response.status + ')');
+  }
+  return { about: (body.about || '').replace(/\.$/, ''), text: body.text || '' };
 }

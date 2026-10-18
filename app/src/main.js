@@ -11,8 +11,8 @@
 
 import { createInkCanvas } from './ink/inkCanvas.js';
 import { createTextLayer } from './ink/textLayer.js';
-import { snapStroke, strokeBox, isClosedLoop } from './ink/shapes.js';
-import { createCircleToAsk } from './ask/circleToAsk.js';
+import { snapStroke, strokeBox, isClosedLoop, underlineOf } from './ink/shapes.js';
+import { createCircleToAsk, explainImage } from './ask/circleToAsk.js';
 import { makeTextItem, strokesSignature, sameSignature, handwriting, handwritingPages } from './ink/inkItems.js';
 import { attachMouse } from './input/mouse.js';
 import { createInputHub } from './input/hub.js';
@@ -281,6 +281,12 @@ const circleToAsk = createCircleToAsk(pageView.stage, document.getElementById('p
   },
 });
 let askOn = false;
+// The tutor gives hints instead of the whole answer, so with Tutor on, asking goes to it.
+let tutorIsOn = false;
+// An underline asks about the text above it: this share of the page's height, within limits.
+const UNDERLINE_REACH = 0.12;
+const UNDERLINE_REACH_MIN = 50;
+const UNDERLINE_REACH_MAX = 160;
 
 ink.setStrokeListener(function (stroke) {
   const box = strokeBox(stroke.points);
@@ -289,21 +295,53 @@ ink.setStrokeListener(function (stroke) {
     circleToAsk.dismiss();
     return;
   }
-  if (askOn && isClosedLoop(stroke.points)) {
-    askAbout(stroke);
+  if (!askOn) {
+    return;
+  }
+  if (isClosedLoop(stroke.points)) {
+    askAbout(box, 'circled');
+    return;
+  }
+  const underline = underlineOf(stroke.points);
+  if (underline !== null) {
+    const pageHeight = document.getElementById('page').clientHeight;
+    const reach = Math.max(UNDERLINE_REACH_MIN, Math.min(UNDERLINE_REACH_MAX, pageHeight * UNDERLINE_REACH));
+    askAbout({ minX: underline.x0 - 8, maxX: underline.x1 + 8, minY: underline.y - reach, maxY: underline.y + 8 }, 'underlined');
   }
 });
 
-async function askAbout(stroke) {
+// Tutor on: hints and a conversation in the notes for follow-ups. Tutor off: the full
+// step-by-step explanation, added to the notes as a study sheet entry.
+async function askAbout(box, marked) {
+  captureInk();
   const tab = activeTab;
   const page = tab.page;
-  tell('Asking about what you circled…');
-  const answer = await circleToAsk.ask(stroke);
+  notes.skipLastStroke(tab, page);
+  if (tutorIsOn) {
+    tell('Asking the tutor about what you ' + marked + '…');
+    const answer = await circleToAsk.ask(
+      box,
+      async function (pictures) {
+        const question = 'I ' + marked + ' this. Walk me through how to answer it, starting with a hint rather than the answer.';
+        const reply = await notes.askAboutPicture(tab, page, question, pictures.image, pictures.thumb);
+        return { about: 'Hint from the tutor', text: reply };
+      },
+      'Asking the tutor…',
+    );
+    if (answer !== null) {
+      tell('The tutor answered. Ask follow-ups under it in Notes');
+    }
+    return;
+  }
+  tell('Asking about what you ' + marked + '…');
+  const answer = await circleToAsk.ask(box, function (pictures) {
+    return explainImage(pictures.image);
+  });
   if (answer === null) {
     return;
   }
   tell('Answered. Tap the pad or press Esc to close');
-  await notes.addNote(tab, page, '### ' + (answer.about || 'Circled on page ' + (page + 1)) + '\n\n' + answer.text);
+  await notes.addNote(tab, page, '### ' + (answer.about || 'Asked on page ' + (page + 1)) + '\n\n' + answer.text);
 }
 
 // Swaps the handwriting that was just read (items start..end-1 of the page) for the typed text,
@@ -342,6 +380,7 @@ function showNotes(isShown) {
 
 // Tutor feedback shows in the notes panel, so turning the tutor on opens the panel too.
 function setTutor(isOn) {
+  tutorIsOn = isOn;
   notes.setTutor(isOn);
   toolbar.setTutorOn(isOn);
   saveSetting(TUTOR_KEY, isOn ? 'on' : 'off');

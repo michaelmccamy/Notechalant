@@ -91,6 +91,28 @@ export function isJustMarks(strokes) {
   });
 }
 
+// Circle to ask also takes an underline: a straight stroke within UNDERLINE_MAX_DEG of level
+// and at least UNDERLINE_MIN_LENGTH long. Returns { x0, x1, y }, or null.
+const UNDERLINE_MAX_DEG = 20;
+const UNDERLINE_MIN_LENGTH = 60;
+
+export function underlineOf(points) {
+  if (points.length < 2) {
+    return null;
+  }
+  const first = points[0];
+  const last = points[points.length - 1];
+  const chord = Math.hypot(last.x - first.x, last.y - first.y);
+  if (chord < UNDERLINE_MIN_LENGTH || chord / pathLength(points) < LINE_MIN_DIRECTNESS || maxBow(points, first, last) / chord > LINE_MAX_BOW) {
+    return null;
+  }
+  const tilt = (Math.abs(Math.atan2(last.y - first.y, Math.abs(last.x - first.x))) * 180) / Math.PI;
+  if (tilt > UNDERLINE_MAX_DEG) {
+    return null;
+  }
+  return { x0: Math.min(first.x, last.x), x1: Math.max(first.x, last.x), y: (first.y + last.y) / 2 };
+}
+
 export function strokeBox(points) {
   return bounds(points);
 }
