@@ -24,6 +24,12 @@
 // with where the pen points. The cursor never slides on its own while you hold still. The lazy
 // brush and the curve fit happen in the ink canvas.
 //
+// Writing slant: writing a stroke turns the hand differently from pointing, so with the pen held
+// down at a desk, down strokes leaned 28 degrees and lines across rose 10 (debug recording
+// 23-45-45), even after corner calibration. With Write on, corner calibration ends by asking for
+// one line across and one line down, drawn the way you write, and writingCorrection (a 2 x 2
+// matrix) turns those two into exactly right and exactly down for all writing after that.
+//
 // Screen directions in relative mode, two ways:
 //   Roll compensation (default). The accelerometer gives "up" (gravity), tracked as the pen
 //   moves. Left and right is turning around up, and up and down is turning around the
@@ -75,6 +81,9 @@ export const DEFAULT_CONFIG = {
   writingCurve: 0,
   writingMidDps: 6, // turning speed that gets the full writing gain
   writingString: 4, // lazy brush string length in px, 0 is off
+  // From the writing step of corner calibration: [a, b, c, d], row major, applied to movement
+  // while writing. null is no correction.
+  writingCorrection: null,
   calibrationMs: 2000, // how long to average the gyro for bias after a reset
   maxGapMs: 50, // ignore time gaps longer than this so a dropped packet can't fling the cursor
 };
@@ -190,6 +199,14 @@ const CORNER_AVERAGE = 6;
 const WRITING_SPEED_CUTOFF_HZ = 4;
 const WRITING_TRAVEL_DPS = 20;
 const WRITING_RETURN_DEG = 1.5;
+// Writing calibration: a line shorter than this (page units, the page is 2 across) is a tap, and
+// lines further than this from level or upright are refused rather than learned, so one bad
+// line can't warp everything.
+const WRITING_MIN_LINE = 0.06;
+const WRITING_MAX_SKEW_DEG = 45;
+// With corners set, pointing past the edge of the calibrated area runs off towards infinity (and
+// beyond the horizon of a desk, back round the other side). The cursor stays within this.
+const POINTER_LIMIT = 1.5;
 
 export function createMotion(overrides) {
   const config = Object.assign({}, DEFAULT_CONFIG, overrides || {});
@@ -219,6 +236,8 @@ export function createMotion(overrides) {
   let recentPointing = [];
   let turnSum = [0, 0, 0];
   let corners = null;
+  // Writing calibration in progress: { which: 'right' or 'down', armed, start, last, right, ... }.
+  let writingCal = null;
   let wasPenDown = false;
   const filterPointX = createOneEuro();
   const filterPointY = createOneEuro();
@@ -330,10 +349,15 @@ export function createMotion(overrides) {
       writeOffset.y *= keep;
       return [x + writeOffset.x, y + writeOffset.y];
     }
-    // The pen moved (x - previous.x). The ink moves gain times that, so the offset takes the rest.
+    // The pen moved (dx, dy). The ink moves that, straightened and scaled by the gain, so the
+    // offset takes the difference.
     const gain = penDown === true ? precisionGain(speed, config) : config.writingGain;
-    writeOffset.x += (gain - 1) * (x - previous.x);
-    writeOffset.y += (gain - 1) * (y - previous.y);
+    const dx = x - previous.x;
+    const dy = y - previous.y;
+    // Pen up too, so the whole space is one consistent mapping the hand can get used to.
+    const c = config.writingCorrection || [1, 0, 0, 1];
+    writeOffset.x += gain * (c[0] * dx + c[1] * dy) - dx;
+    writeOffset.y += gain * (c[2] * dx + c[3] * dy) - dy;
     return [x + writeOffset.x, y + writeOffset.y];
   }
 
@@ -381,6 +405,12 @@ export function createMotion(overrides) {
       x = (right - center.right) / config.pointerRangeXDeg;
       y = -(above - center.above) / config.pointerRangeYDeg;
     }
+    x = Number.isFinite(x) ? Math.max(-POINTER_LIMIT, Math.min(POINTER_LIMIT, x)) : 0;
+    y = Number.isFinite(y) ? Math.max(-POINTER_LIMIT, Math.min(POINTER_LIMIT, y)) : 0;
+    if (writingCal !== null) {
+      writingCalStep(x, y, penDown === true);
+      return { dx: 0, dy: 0, ready: false };
+    }
     [x, y] = applyWriting(x, y, right, above, dt, penDown);
     // dx and dy are for the debug graph only: the change, as if the page were 1000 px wide.
     const previous = lastPointer || { x: x, y: y };
@@ -401,6 +431,11 @@ export function createMotion(overrides) {
   }
 
   function cancelScreenCalibration() {
+    if (writingCal !== null) {
+      // The corners are already saved. Only the writing step is skipped.
+      finishWritingCal({ writing: 'skipped' });
+      return;
+    }
     if (corners !== null) {
       const onProgress = corners.onProgress;
       corners = null;
@@ -461,11 +496,64 @@ export function createMotion(overrides) {
     rightShift = 0;
     filterPointX.reset();
     filterPointY.reset();
+    if (config.writingMode) {
+      // The pad is still down from the last corner's tap, so a line only starts after it lifts.
+      writingCal = { which: 'right', armed: false, start: null, last: null, right: null, learnedPenAxis: learned, onProgress: onProgress };
+      onProgress({ step: 'draw', which: 'right' });
+      return;
+    }
     onProgress({ step: 'done', learnedPenAxis: learned });
+  }
+
+  // ---- Writing calibration (the end of corner calibration, with Write on) ----
+  //
+  // Measures one line across and one line down, from where the pen pressed to where it lifted,
+  // in page units. onProgress gets { step: 'draw', which, retry } for each, then { step: 'done',
+  // writing: true, 'skipped', or 'failed', reason }.
+  function writingCalStep(x, y, penDown) {
+    const cal = writingCal;
+    if (!penDown) {
+      if (cal.start !== null) {
+        const line = [cal.last.x - cal.start.x, cal.last.y - cal.start.y];
+        cal.start = null;
+        if (Math.hypot(line[0], line[1]) < WRITING_MIN_LINE) {
+          cal.onProgress({ step: 'draw', which: cal.which, retry: 'That was too short. Draw a longer line' });
+          return;
+        }
+        if (cal.which === 'right') {
+          cal.right = line;
+          cal.which = 'down';
+          cal.onProgress({ step: 'draw', which: 'down' });
+          return;
+        }
+        finishWritingCal(learnWritingCorrection(cal.right, line));
+        return;
+      }
+      cal.armed = true;
+      return;
+    }
+    if (!cal.armed) {
+      return;
+    }
+    if (cal.start === null) {
+      cal.start = { x: x, y: y };
+    }
+    cal.last = { x: x, y: y };
+  }
+
+  function finishWritingCal(result) {
+    const cal = writingCal;
+    writingCal = null;
+    if (result.correction) {
+      config.writingCorrection = result.correction;
+    }
+    clearWriting();
+    cal.onProgress({ step: 'done', learnedPenAxis: cal.learnedPenAxis, writing: result.writing, reason: result.reason });
   }
 
   function clearScreenMapping() {
     config.screenMapping = null;
+    config.writingCorrection = null;
     center = null;
   }
 
@@ -699,6 +787,25 @@ export function createMotion(overrides) {
   };
 }
 
+// The writing correction from a line across and a line down (each [dx, dy] in page units, y
+// down): the 2 x 2 matrix taking the first to exactly right and the second to exactly down,
+// keeping their lengths. Returns { writing: true, correction } or { writing: 'failed', reason }.
+export function learnWritingCorrection(across, down) {
+  const r = [across[0] / Math.hypot(across[0], across[1]), across[1] / Math.hypot(across[0], across[1])];
+  const d = [down[0] / Math.hypot(down[0], down[1]), down[1] / Math.hypot(down[0], down[1])];
+  const acrossTilt = (Math.abs(Math.atan2(r[1], r[0])) * 180) / Math.PI;
+  const downTilt = (Math.abs(Math.atan2(d[0], d[1])) * 180) / Math.PI;
+  if (r[0] <= 0 || acrossTilt > WRITING_MAX_SKEW_DEG) {
+    return { writing: 'failed', reason: 'The line across went too far up or down. Run K again and draw it left to right' };
+  }
+  if (d[1] <= 0 || downTilt > WRITING_MAX_SKEW_DEG) {
+    return { writing: 'failed', reason: 'The line down leaned too far. Run K again and draw it top to bottom' };
+  }
+  // The inverse of the matrix with r and d as its columns.
+  const det = r[0] * d[1] - d[0] * r[1];
+  return { writing: true, correction: [d[1] / det, -d[0] / det, -r[1] / det, r[0] / det] };
+}
+
 // Turns stored or pasted settings into a safe config: unknown keys are dropped, and values
 // of the wrong type, or axes that don't exist, fall back to the default.
 export function sanitizeConfig(raw) {
@@ -722,6 +829,12 @@ export function sanitizeConfig(raw) {
     }
     if (key === 'screenMapping') {
       if (value === null || (Array.isArray(value) && value.length === 9 && value.every((n) => typeof n === 'number' && Number.isFinite(n)))) {
+        clean[key] = value;
+      }
+      continue;
+    }
+    if (key === 'writingCorrection') {
+      if (value === null || (Array.isArray(value) && value.length === 4 && value.every((n) => typeof n === 'number' && Number.isFinite(n)))) {
         clean[key] = value;
       }
       continue;

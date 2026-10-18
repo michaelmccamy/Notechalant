@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createMotion, sanitizeConfig, accelerationGain, DEFAULT_CONFIG } from '../src/motion/index.js';
+import { createMotion, sanitizeConfig, accelerationGain, learnWritingCorrection, DEFAULT_CONFIG } from '../src/motion/index.js';
 
 // Feeds `seconds` of 100 Hz samples, each built by rates(i), and returns every update result.
 function run(motion, seconds, rates, startT) {
@@ -400,7 +400,8 @@ test('pointer mode: holding still stays put, and recenter makes here the middle'
 });
 
 // Drives a pointer-mode motion with a physical pen: turn right/left (deg), turn up/down (deg),
-// hold, and tap the pad. Returns the last update.
+// hold, and tap the pad. press holds the pad down through the step's turns, then lifts.
+// Returns the last update.
 function penScript(motion, pen, steps) {
   let t = 0;
   let last = null;
@@ -424,11 +425,15 @@ function penScript(motion, pen, steps) {
     return c.map((n) => n / l);
   }
   for (const step of steps) {
+    const press = step.press === true;
     if (step.right) {
-      for (let i = 0; i < Math.abs(step.right) * 5; i++) sample(rightAxis(), Math.sign(step.right) * 20, false);
+      for (let i = 0; i < Math.abs(step.right) * 5; i++) sample(rightAxis(), Math.sign(step.right) * 20, press);
     }
     if (step.up) {
-      for (let i = 0; i < Math.abs(step.up) * 5; i++) sample(downAxis(), -Math.sign(step.up) * 20, false);
+      for (let i = 0; i < Math.abs(step.up) * 5; i++) sample(downAxis(), -Math.sign(step.up) * 20, press);
+    }
+    if (press) {
+      for (let i = 0; i < 20; i++) sample([0, 0, 0], 0, false);
     }
     for (let i = 0; i < (step.hold || 0) * 100; i++) sample([0, 0, 0], 0, false);
     if (step.tap) {
@@ -545,4 +550,69 @@ test('sanitizeConfig keeps good saved values and drops bad ones', function () {
   assert.equal(sanitizeConfig({ horizontalSign: -1 }).horizontalSign, -1);
   assert.equal(sanitizeConfig({ horizontalSign: 0.5 }).horizontalSign, DEFAULT_CONFIG.horizontalSign);
   assert.equal(sanitizeConfig({ rollCompensation: false }).rollCompensation, false);
+});
+
+test('with Write on, corner calibration ends with a line across and a line down, and writing comes out upright', function () {
+  const pen = heldPen(0);
+  const motion = createMotion({ calibrationMs: 0, penAxis: PEN, pointerSmoothing: 0, writingMode: true, writingGain: 1, writingCurve: 0 });
+  penScript(motion, pen, [{ hold: 0.3 }]);
+  const steps = [];
+  let done = null;
+  motion.startScreenCalibration(function (m) {
+    steps.push(m.step === 'corner' ? 'corner ' + m.index : m.step === 'draw' ? 'draw ' + m.which + (m.retry ? ' again' : '') : m.step);
+    if (m.step === 'done') done = m;
+  });
+  penScript(motion, pen, [
+    { right: -15, up: 9, hold: 0.3, tap: true },
+    { right: 30, hold: 0.3, tap: true },
+    { up: -18, hold: 0.3, tap: true },
+    { right: -30, hold: 0.3, tap: true },
+  ]);
+  assert.equal(motion.config.writingCorrection, null, 'not until the two lines are drawn');
+  // A tap is too short to be a line. Then this hand's lines: across rises, down leans left.
+  const during = penScript(motion, pen, [{ right: 15, up: 9, hold: 0.2, tap: true }, { right: 4, up: 0.7, press: true }]);
+  assert.equal(during.ready, false, 'nothing draws while calibrating');
+  penScript(motion, pen, [{ hold: 0.2 }, { right: -1.5, up: -3, press: true }]);
+  assert.deepEqual(steps, ['corner 0', 'corner 1', 'corner 2', 'corner 3', 'draw right', 'draw right again', 'draw down', 'done']);
+  assert.equal(done.writing, true);
+
+  // Writing the same leaning down stroke now goes straight down.
+  const before = penScript(motion, pen, [{ hold: 0.2 }]);
+  const after = penScript(motion, pen, [{ right: -1.5, up: -3, press: true }]);
+  const dx = after.x - before.x;
+  const dy = after.y - before.y;
+  assert.ok(dy > 0.1 && Math.abs(dx / dy) < 0.05, 'straight down: ' + dx.toFixed(3) + ', ' + dy.toFixed(3));
+});
+
+test('the writing correction is refused for lines far from level or upright, and Esc keeps the corners', function () {
+  // The lines from the desk recording: across rises 10 degrees, down leans 28.
+  const fix = learnWritingCorrection([0.98, -0.17], [-0.43, 0.9]);
+  assert.equal(fix.writing, true);
+  const [a, b, c, d] = fix.correction;
+  assert.ok(Math.abs(c * 0.98 + d * -0.17) < 1e-9 && a * 0.98 + b * -0.17 > 0, 'across becomes level');
+  assert.ok(Math.abs(a * -0.43 + b * 0.9) < 1e-9 && c * -0.43 + d * 0.9 > 0, 'down becomes upright');
+  assert.equal(learnWritingCorrection([1, -1.2], [0, 1]).writing, 'failed', 'across at 50 degrees');
+  assert.equal(learnWritingCorrection([1, 0], [-1, 0.8]).writing, 'failed', 'down leaning 51 degrees');
+  assert.equal(learnWritingCorrection([-1, 0], [0, 1]).writing, 'failed', 'drawn right to left');
+
+  const pen = heldPen(0);
+  const motion = createMotion({ calibrationMs: 0, penAxis: PEN, pointerSmoothing: 0, writingMode: true });
+  penScript(motion, pen, [{ hold: 0.3 }]);
+  let last = null;
+  motion.startScreenCalibration(function (m) {
+    last = m;
+  });
+  penScript(motion, pen, [
+    { right: -15, up: 9, hold: 0.3, tap: true },
+    { right: 30, hold: 0.3, tap: true },
+    { up: -18, hold: 0.3, tap: true },
+    { right: -30, hold: 0.3, tap: true },
+  ]);
+  motion.cancelScreenCalibration();
+  assert.equal(last.step, 'done');
+  assert.equal(last.writing, 'skipped');
+  assert.ok(motion.config.screenMapping !== null, 'corners kept');
+  assert.equal(penScript(motion, pen, [{ hold: 0.1 }]).ready, true, 'back to normal');
+  assert.deepEqual(sanitizeConfig({ writingCorrection: [1, 0.5, 0.2, 1.2] }).writingCorrection, [1, 0.5, 0.2, 1.2]);
+  assert.equal(sanitizeConfig({ writingCorrection: [1, 2] }).writingCorrection, null);
 });
