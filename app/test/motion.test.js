@@ -399,6 +399,98 @@ test('pointer mode: holding still stays put, and recenter makes here the middle'
   assert.ok(Math.abs(r.at.x) < 0.005 && Math.abs(r.at.y) < 0.005, 'recentered ' + JSON.stringify(r.at));
 });
 
+// Drives a pointer-mode motion with a physical pen: turn right/left (deg), turn up/down (deg),
+// hold, and tap the pad. Returns the last update.
+function penScript(motion, pen, steps) {
+  let t = 0;
+  let last = null;
+  function sample(axis, dps, penDown) {
+    const r = penSamples(pen, axis, dps)();
+    last = motion.update({ t: t, gx: r.gx, gy: r.gy, gz: r.gz, ax: r.ax, ay: r.ay, az: r.az, pen: penDown ? 1 : 0 }, penDown);
+    t += 10;
+  }
+  // Turning right is around the room's vertical (gravity), and up and down is around the pen's
+  // current sideways axis, as a hand does it. Both change as the pen moves, so they're worked
+  // out fresh for every sample.
+  const len = Math.hypot(...PEN);
+  const forward = PEN.map((n) => n / len);
+  function rightAxis() {
+    return pen.up.map((n) => -n);
+  }
+  function downAxis() {
+    const u = pen.up;
+    const c = [u[1] * forward[2] - u[2] * forward[1], u[2] * forward[0] - u[0] * forward[2], u[0] * forward[1] - u[1] * forward[0]];
+    const l = Math.hypot(...c);
+    return c.map((n) => n / l);
+  }
+  for (const step of steps) {
+    if (step.right) {
+      for (let i = 0; i < Math.abs(step.right) * 5; i++) sample(rightAxis(), Math.sign(step.right) * 20, false);
+    }
+    if (step.up) {
+      for (let i = 0; i < Math.abs(step.up) * 5; i++) sample(downAxis(), -Math.sign(step.up) * 20, false);
+    }
+    for (let i = 0; i < (step.hold || 0) * 100; i++) sample([0, 0, 0], 0, false);
+    if (step.tap) {
+      for (let i = 0; i < 5; i++) sample([0, 0, 0], 0, true);
+      for (let i = 0; i < 20; i++) sample([0, 0, 0], 0, false);
+    }
+  }
+  return last;
+}
+
+test('corner calibration: point at four corners, and the page fills exactly that area', function () {
+  const pen = heldPen(Math.PI / 5);
+  const motion = createMotion({ calibrationMs: 0, penAxis: PEN, pointerSmoothing: 0 });
+  penScript(motion, pen, [{ hold: 0.3 }]);
+  const steps = [];
+  motion.startScreenCalibration(function (m) {
+    steps.push(m.step === 'corner' ? 'corner ' + m.index : m.step);
+  });
+  const during = penScript(motion, pen, [{ hold: 0.05 }]);
+  assert.equal(during.ready, false, 'nothing moves or draws while calibrating');
+  // The page spans 15 degrees either side and 9 up and down, around the middle.
+  penScript(motion, pen, [
+    { right: -15, up: 9, hold: 0.3, tap: true },
+    { right: 30, hold: 0.3, tap: true },
+    { up: -18, hold: 0.3, tap: true },
+    { right: -30, hold: 0.3, tap: true },
+  ]);
+  assert.deepEqual(steps, ['corner 0', 'corner 1', 'corner 2', 'corner 3', 'done']);
+  assert.ok(motion.config.screenMapping !== null);
+
+  // Back to the bottom left corner the user last pointed at, then to other spots.
+  let at = penScript(motion, pen, [{ hold: 0.1 }]);
+  assert.ok(Math.abs(at.x - -1) < 0.03 && Math.abs(at.y - 1) < 0.03, 'bottom left ' + JSON.stringify(at));
+  at = penScript(motion, pen, [{ right: 15, up: 9, hold: 0.1 }]);
+  assert.ok(Math.abs(at.x) < 0.03 && Math.abs(at.y) < 0.03, 'middle ' + JSON.stringify(at));
+  at = penScript(motion, pen, [{ right: 7.5, hold: 0.1 }]);
+  assert.ok(Math.abs(at.x - 0.5) < 0.04 && Math.abs(at.y) < 0.03, 'halfway right ' + JSON.stringify(at));
+
+  // Recentering pointing 5 degrees off to the right makes that the middle across, but leaves up
+  // and down alone, since that comes from gravity and doesn't drift.
+  penScript(motion, pen, [{ right: -2.5, up: 4.5 }]);
+  motion.recenter();
+  at = penScript(motion, pen, [{ hold: 0.1 }]);
+  assert.ok(Math.abs(at.x) < 0.03, 'recentered across ' + JSON.stringify(at));
+  assert.ok(Math.abs(at.y - -0.5) < 0.05, 'still half way up ' + JSON.stringify(at));
+});
+
+test('corner calibration refuses corners tapped without moving, and Enter also captures', function () {
+  const pen = heldPen(0);
+  const motion = createMotion({ calibrationMs: 0, penAxis: PEN, pointerSmoothing: 0 });
+  penScript(motion, pen, [{ hold: 0.3 }]);
+  let result = null;
+  motion.startScreenCalibration(function (m) {
+    result = m;
+  });
+  for (let i = 0; i < 4; i++) {
+    motion.captureCorner();
+  }
+  assert.equal(result.step, 'failed');
+  assert.equal(motion.config.screenMapping, null);
+});
+
 test('relative mode is still there behind pointerMode: false', function () {
   const motion = createMotion({ pointerMode: false, calibrationMs: 0 });
   const result = motion.update({ t: 0, gx: 0, gy: 0, gz: 0, ax: 0, ay: 0, az: 1, pen: 0 });

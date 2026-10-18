@@ -61,6 +61,10 @@
             <span class="label">Load recording</span>
           </button>
           <input id="recording-file" type="file" accept=".jsonl,.txt,.json" hidden />
+          <button id="calibrate-screen" class="btn" title="Point at the page's four corners so the cursor goes exactly where you point (K)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /><circle cx="12" cy="12" r="2" /></svg>
+            <span class="label">Calibrate screen</span>
+          </button>
           <button id="connect-remote" class="btn" title="Connect the IR remote's Arduino over USB (Chrome or Edge). Works alongside the pen" aria-pressed="false">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="2" width="10" height="20" rx="3" /><path d="M12 6h.01M10 11h.01M14 11h.01M10 15h.01M14 15h.01" /></svg>
             <span class="label">Remote</span>
@@ -129,6 +133,16 @@
             <div class="typed-layer" id="typed-layer"></div>
             <canvas id="ink"></canvas>
             <canvas id="debug-trail" hidden></canvas>
+            <div class="corner-guide" id="corner-guide" hidden>
+              <span class="corner-dot top left"></span>
+              <span class="corner-dot top right"></span>
+              <span class="corner-dot bottom right"></span>
+              <span class="corner-dot bottom left"></span>
+              <div class="corner-card">
+                <div class="corner-title" id="corner-title">Point at the top left corner</div>
+                <div class="corner-text">Then tap the pad, or press Enter. Esc cancels.</div>
+              </div>
+            </div>
           </div>
           <aside class="ask-card" id="ask-card" aria-live="polite" hidden>
             <div class="ask-head">
@@ -138,7 +152,7 @@
             <div class="ask-body" id="ask-body"></div>
           </aside>
           <div class="calibrating" id="calibrating" role="status" aria-live="polite" hidden>
-            <div class="calibrating-title">Hold the pen still</div>
+            <div class="calibrating-title" id="calibrating-title">Hold the pen still</div>
             <div class="calibrating-text" id="calibrating-text">Measuring the gyro. About 2 seconds</div>
             <div class="calibrating-bar"><span id="calibrating-fill"></span></div>
           </div>
@@ -289,6 +303,7 @@
         <button id="debug-record" title="Save raw samples, dx and dy, and settings to a .jsonl file">Record</button>
         <button id="tune-copy" title="Copy all motion settings as JSON, to paste over DEFAULT_CONFIG in motion/index.js">Copy JSON</button>
         <button id="tune-reset" title="Put the tuning settings back to the defaults">Reset</button>
+        <button id="clear-corners" title="Forget the screen corners and go back to the pointer width and height sliders">Clear corners</button>
       </div>
     </aside>
 

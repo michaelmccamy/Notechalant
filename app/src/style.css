@@ -1527,6 +1527,90 @@ body.presenting .workspace {
   animation: note-pulse 1.2s ease-in-out infinite;
 }
 
+/* Corner calibration: a dot on the corner to point at, and what to do, over the page. */
+.corner-guide {
+  position: absolute;
+  inset: 0;
+  z-index: 16;
+  pointer-events: none;
+}
+
+.corner-guide[hidden] {
+  display: none;
+}
+
+.corner-dot {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  margin: -14px;
+  border: 3px solid var(--accent);
+  border-radius: 50%;
+  background: var(--surface);
+  opacity: 0.35;
+}
+
+.corner-dot.top {
+  top: 14px;
+}
+
+.corner-dot.bottom {
+  bottom: 14px;
+}
+
+.corner-dot.left {
+  left: 14px;
+}
+
+.corner-dot.right {
+  right: 14px;
+}
+
+.corner-dot.done {
+  background: var(--accent);
+  opacity: 0.6;
+}
+
+.corner-dot.current {
+  opacity: 1;
+  background: var(--accent);
+  box-shadow: 0 0 0 10px rgba(46, 107, 79, 0.25);
+  animation: corner-pulse 1s ease-in-out infinite;
+}
+
+@keyframes corner-pulse {
+  50% {
+    box-shadow: 0 0 0 18px rgba(46, 107, 79, 0.12);
+  }
+}
+
+.corner-card {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(460px, calc(100% - 120px));
+  padding: 22px 26px;
+  text-align: center;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+
+.corner-title {
+  font-family: var(--font-display);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.corner-text {
+  margin-top: 6px;
+  font-size: 16px;
+  color: var(--soft);
+}
+
 /* "Hold the pen still" card while the pen calibrates. Big and in the middle of the page,
    because moving restarts calibration and the status bar is easy to miss. */
 .calibrating {

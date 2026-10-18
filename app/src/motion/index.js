@@ -10,7 +10,9 @@
 //   Pointer (default). Like a laser pointer: the cursor goes where the pen points. Pitch comes
 //   from gravity and the pen axis, yaw from the gyro integrated around gravity, and both map
 //   straight to a spot on the page (pointerRangeXDeg either side fills the width). Recenter()
-//   makes wherever the pen points now the middle. update() returns { absolute: true, x, y }
+//   makes wherever the pen points now the middle. After corner calibration
+//   (startScreenCalibration, motion/screenMap.js) the four corners the user pointed at map
+//   exactly onto the page's corners instead, and recentering only corrects yaw drift. update() returns { absolute: true, x, y }
 //   with x and y from -1 to 1 across the page.
 //   Relative. Turning speed moves the cursor, like a mouse. The rest of this comment is about it.
 //
@@ -23,6 +25,8 @@
 //   correct only for the grip they were measured with.
 // startAxisWizard() measures penAxis and horizontalSign, and the fixed vectors too.
 
+import { toPlane, fromPlane, applyHomography, invertHomography, mappingFromCorners } from './screenMap.js';
+
 export const AXES = ['gx', 'gy', 'gz'];
 
 export const DEFAULT_CONFIG = {
@@ -31,6 +35,8 @@ export const DEFAULT_CONFIG = {
   pointerRangeYDeg: 12, // and this far up or down
   pointerSmoothing: 0.5, // One Euro filter on the pointing angles, 0 is off
   pointerBeta: 0.3, // how quickly it opens up for fast movement, so it doesn't lag
+  // From corner calibration: 9 numbers mapping pointing to the page, or null for the ranges above.
+  screenMapping: null,
   rollCompensation: true,
   // Roll compensation: the way the pen points, as a unit vector in sensor axes (gx, gy, gz),
   // and 1 or -1 to flip left and right. Measured on the breadboard pen from a down stroke.
@@ -155,6 +161,11 @@ function cross(a, b) {
   return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
 }
 
+// Corner calibration takes the pointing from this many samples before the tap (about 0.1 s),
+// averaged over CORNER_AVERAGE, so pressing the pad doesn't nudge the reading.
+const CORNER_LOOKBACK = 10;
+const CORNER_AVERAGE = 6;
+
 export function createMotion(overrides) {
   const config = Object.assign({}, DEFAULT_CONFIG, overrides || {});
   const filterX = createOneEuro();
@@ -175,6 +186,12 @@ export function createMotion(overrides) {
   let yaw = 0;
   let center = null;
   let lastPointer = null;
+  // Corner calibration: degrees added to "right" so the mapping's frame lines up after yaw
+  // drift or a reset, the recent pointing for picking a corner, and the calibration in progress.
+  let rightShift = 0;
+  let recentPointing = [];
+  let corners = null;
+  let wasPenDown = false;
   const filterPointX = createOneEuro();
   const filterPointY = createOneEuro();
 
@@ -246,28 +263,100 @@ export function createMotion(overrides) {
     center = null;
   }
 
-  function pointerUpdate(rate, dt) {
+  function pointerUpdate(rate, dt, penDown) {
     yaw += dot(rate, up) * dt;
     const now = pointing();
-    if (center === null) {
-      center = now;
-      filterPointX.reset();
-      filterPointY.reset();
-    }
-    // Degrees right of and below the center.
-    let right = -(now.yaw - center.yaw) * config.horizontalSign;
-    let below = -(now.pitch - center.pitch);
+    // Degrees right of and above the reference the yaw started from.
+    let right = -now.yaw * config.horizontalSign;
+    let above = now.pitch;
     if (config.pointerSmoothing > 0) {
       const minCutoff = smoothingToCutoff(config.pointerSmoothing);
       right = filterPointX.filter(right, dt, minCutoff, config.pointerBeta);
-      below = filterPointY.filter(below, dt, minCutoff, config.pointerBeta);
+      above = filterPointY.filter(above, dt, minCutoff, config.pointerBeta);
     }
-    const x = right / config.pointerRangeXDeg;
-    const y = below / config.pointerRangeYDeg;
+    recentPointing.push([right, above]);
+    if (recentPointing.length > CORNER_LOOKBACK + CORNER_AVERAGE) {
+      recentPointing.shift();
+    }
+
+    if (corners !== null) {
+      if (penDown === true && !wasPenDown) {
+        captureCorner();
+      }
+      wasPenDown = penDown === true;
+      return { dx: 0, dy: 0, ready: false };
+    }
+    wasPenDown = penDown === true;
+
+    const mapping = config.screenMapping;
+    if (center === null) {
+      if (mapping !== null) {
+        // Pointing now is the middle: line the mapping's frame up with it, left and right only.
+        // Up and down comes from gravity, which doesn't drift.
+        const middle = applyHomography(invertHomography(mapping), [0, 0]);
+        rightShift = right - fromPlane(middle[0], middle[1])[0];
+      }
+      center = { right: right, above: above };
+    }
+    let x;
+    let y;
+    if (mapping !== null) {
+      [x, y] = applyHomography(mapping, toPlane(right - rightShift, above));
+    } else {
+      x = (right - center.right) / config.pointerRangeXDeg;
+      y = -(above - center.above) / config.pointerRangeYDeg;
+    }
     // dx and dy are for the debug graph only: the change, as if the page were 1000 px wide.
     const previous = lastPointer || { x: x, y: y };
     lastPointer = { x: x, y: y };
     return { absolute: true, x: x, y: y, dx: (x - previous.x) * 500, dy: (y - previous.y) * 500, ready: true };
+  }
+
+  // ---- Corner calibration ----
+  //
+  // The user points at each corner of the page in turn (top left, top right, bottom right,
+  // bottom left) and taps the pad, or presses Enter, which calls captureCorner(). The cursor
+  // stays put and nothing is drawn meanwhile. onProgress gets { step: 'corner', index } for each
+  // corner, then { step: 'done' }, { step: 'failed', reason }, or { step: 'cancelled' }.
+  function startScreenCalibration(onProgress) {
+    cancelScreenCalibration();
+    corners = { angles: [], onProgress: onProgress };
+    onProgress({ step: 'corner', index: 0 });
+  }
+
+  function cancelScreenCalibration() {
+    if (corners !== null) {
+      const onProgress = corners.onProgress;
+      corners = null;
+      onProgress({ step: 'cancelled' });
+    }
+  }
+
+  function captureCorner() {
+    if (corners === null || recentPointing.length < CORNER_AVERAGE) {
+      return;
+    }
+    const beforeTap = recentPointing.slice(0, Math.max(CORNER_AVERAGE, recentPointing.length - CORNER_LOOKBACK)).slice(-CORNER_AVERAGE);
+    const angle = [0, 1].map((i) => beforeTap.reduce((sum, p) => sum + p[i], 0) / beforeTap.length);
+    corners.angles.push(angle);
+    if (corners.angles.length < 4) {
+      corners.onProgress({ step: 'corner', index: corners.angles.length });
+      return;
+    }
+    const result = mappingFromCorners(corners.angles.map(([r, a]) => [r - rightShift, a]));
+    const onProgress = corners.onProgress;
+    corners = null;
+    if (result.mapping === null) {
+      onProgress({ step: 'failed', reason: result.reason });
+      return;
+    }
+    config.screenMapping = result.mapping;
+    onProgress({ step: 'done' });
+  }
+
+  function clearScreenMapping() {
+    config.screenMapping = null;
+    center = null;
   }
 
   // Rotation rates (deg/s, bias removed) to cursor rates, right and down positive.
@@ -317,7 +406,7 @@ export function createMotion(overrides) {
       return { dx: 0, dy: 0, ready: false };
     }
     if (config.pointerMode && up !== null) {
-      return pointerUpdate(rate, dt);
+      return pointerUpdate(rate, dt, penDown);
     }
     lastPointer = null;
     let [rateX, rateY] = screenRates(rate);
@@ -458,6 +547,9 @@ export function createMotion(overrides) {
     yaw = 0;
     center = null;
     lastPointer = null;
+    recentPointing = [];
+    filterPointX.reset();
+    filterPointY.reset();
     movedDuringCalibration = false;
     filterX.reset();
     filterY.reset();
@@ -466,6 +558,7 @@ export function createMotion(overrides) {
   // Called when the user presses R or reconnects. Starts calibration over.
   function reset() {
     cancelAxisWizard();
+    cancelScreenCalibration();
     restartCalibration();
   }
 
@@ -479,7 +572,19 @@ export function createMotion(overrides) {
     return { calibrating: bias === null, progress: progress, bias: bias, moved: movedDuringCalibration, up: up };
   }
 
-  return { update, reset, recenter, getState, startAxisWizard, cancelAxisWizard, config };
+  return {
+    update,
+    reset,
+    recenter,
+    getState,
+    startAxisWizard,
+    cancelAxisWizard,
+    startScreenCalibration,
+    cancelScreenCalibration,
+    captureCorner,
+    clearScreenMapping,
+    config,
+  };
 }
 
 // Turns stored or pasted settings into a safe config: unknown keys are dropped, and values
@@ -501,6 +606,12 @@ export function sanitizeConfig(raw) {
       continue;
     }
     if (typeof value !== expected) {
+      continue;
+    }
+    if (key === 'screenMapping') {
+      if (value === null || (Array.isArray(value) && value.length === 9 && value.every((n) => typeof n === 'number' && Number.isFinite(n)))) {
+        clean[key] = value;
+      }
       continue;
     }
     if (key === 'horizontalSign') {

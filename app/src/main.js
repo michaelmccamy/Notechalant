@@ -94,6 +94,7 @@ const hub = createInputHub({
 // While the pen is calibrating, a big card on the page says to hold still. It's easy to miss
 // in the status bar, and moving restarts the calibration.
 const calibratingEl = document.getElementById('calibrating');
+const calibratingTitle = document.getElementById('calibrating-title');
 const calibratingText = document.getElementById('calibrating-text');
 const calibratingFill = document.getElementById('calibrating-fill');
 let wasCalibrating = false;
@@ -102,6 +103,8 @@ setInterval(function () {
   const showing = hub.isReceiving() && state.calibrating;
   calibratingEl.hidden = !showing;
   if (showing) {
+    // With screen corners set, where the pen points now becomes the middle, so aim there.
+    calibratingTitle.textContent = motion.config.screenMapping ? 'Point at the middle and hold still' : 'Hold the pen still';
     calibratingText.textContent = state.moved ? 'You moved, so it started over. Keep it still' : 'Measuring the gyro. About 2 seconds';
     calibratingFill.style.width = Math.round(state.progress * 100) + '%';
   } else if (wasCalibrating && !state.calibrating) {
@@ -210,6 +213,54 @@ const notes = createNotesController({
   onBusyChange: function (isBusy) {
     toolbar.setTranscribing(isBusy);
   },
+});
+
+// Corner calibration: point at the page's four corners in turn and tap the pad (or press
+// Enter), so the cursor goes exactly where the pen points. K or the sidebar button starts it.
+const cornerGuide = document.getElementById('corner-guide');
+const cornerTitle = document.getElementById('corner-title');
+const cornerDots = cornerGuide.querySelectorAll('.corner-dot');
+const CORNER_NAMES = ['top left', 'top right', 'bottom right', 'bottom left'];
+let calibratingCorners = false;
+
+function startCornerCalibration() {
+  if (!motion.config.pointerMode) {
+    tell('Corner calibration is for pointer mode. Turn it on in the D panel');
+    return;
+  }
+  if (!hub.isReceiving()) {
+    tell('Connect the pen first, then calibrate the screen');
+    return;
+  }
+  motion.startScreenCalibration(function (message) {
+    calibratingCorners = message.step === 'corner';
+    cornerGuide.hidden = !calibratingCorners;
+    if (message.step === 'corner') {
+      cornerTitle.textContent = 'Point at the ' + CORNER_NAMES[message.index] + ' corner';
+      cornerDots.forEach(function (dot, i) {
+        dot.classList.toggle('done', i < message.index);
+        dot.classList.toggle('current', i === message.index);
+      });
+    } else if (message.step === 'done') {
+      debug.refreshSettings();
+      tell('Screen calibrated. Double tap the pad to recenter if it drifts');
+    } else if (message.step === 'failed') {
+      toolbar.setStatus(message.reason, true);
+    } else {
+      tell('Corner calibration cancelled');
+    }
+  });
+}
+
+document.getElementById('calibrate-screen').addEventListener('click', function (event) {
+  event.currentTarget.blur();
+  startCornerCalibration();
+});
+
+document.getElementById('clear-corners').addEventListener('click', function () {
+  motion.clearScreenMapping();
+  debug.refreshSettings();
+  tell('Screen corners cleared. The pointer width and height sliders apply again');
 });
 
 // Circle to ask: with Ask on, a loop around part of the page gets it explained in a card, and
@@ -1081,6 +1132,7 @@ function onExplorerButton(delta) {
 // R  recalibrate motion
 // D or T  show or hide the motion debug panel (live graphs, axis wizard, recording, tuning)
 // P  enter or leave present mode, Esc leaves it
+// K  calibrate the screen: point at each corner and tap the pad or press Enter
 // Enter  transcribe new writing on this page now
 // None of them fire while typing in a text field, like the note editor.
 window.addEventListener('keydown', function (event) {
@@ -1108,10 +1160,17 @@ window.addEventListener('keydown', function (event) {
     debug.toggle();
   } else if (event.key === 'p' || event.key === 'P') {
     setPresenting(!presenting);
+  } else if (event.key === 'Escape' && calibratingCorners) {
+    motion.cancelScreenCalibration();
   } else if (event.key === 'Escape' && circleToAsk.isOpen()) {
     circleToAsk.dismiss();
   } else if (event.key === 'Escape' && presenting) {
     setPresenting(false);
+  } else if (event.key === 'Enter' && calibratingCorners) {
+    event.preventDefault();
+    motion.captureCorner();
+  } else if ((event.key === 'k' || event.key === 'K') && !event.ctrlKey && !event.metaKey) {
+    startCornerCalibration();
   } else if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) {
     event.preventDefault();
     toolbar.buttons.transcribe.click();

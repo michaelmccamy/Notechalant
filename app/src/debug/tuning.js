@@ -12,7 +12,7 @@ import { DEFAULT_CONFIG, sanitizeConfig, smoothingToCutoff } from '../motion/ind
 const STORAGE_KEY = 'notechalant.motion';
 // Only the knobs on the panel are saved, so a later change to another default
 // (calibration time, say) isn't hidden by an old saved value.
-const TUNED_KEYS = ['pointerMode', 'pointerRangeXDeg', 'pointerRangeYDeg', 'pointerSmoothing', 'pixelsPerDegree', 'acceleration', 'drawingGain', 'travelGain', 'rollCompensation', 'penAxis', 'horizontalSign', 'xVector', 'yVector', 'smoothing', 'deadzone'];
+const TUNED_KEYS = ['screenMapping', 'pointerMode', 'pointerRangeXDeg', 'pointerRangeYDeg', 'pointerSmoothing', 'pixelsPerDegree', 'acceleration', 'drawingGain', 'travelGain', 'rollCompensation', 'penAxis', 'horizontalSign', 'xVector', 'yVector', 'smoothing', 'deadzone'];
 const AXIS_NAMES = ['gx', 'gy', 'gz'];
 
 export function loadMotionSettings() {

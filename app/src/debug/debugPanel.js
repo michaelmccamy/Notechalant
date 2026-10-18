@@ -295,7 +295,8 @@ export function createDebugPanel(motion, ink, handlers) {
     }
   }
 
-  return { motion: tapped, toggle };
+  // refreshSettings saves and shows settings changed outside the panel (corner calibration).
+  return { motion: tapped, toggle, refreshSettings: tuning.refresh };
 }
 
 function fixed(n) {
