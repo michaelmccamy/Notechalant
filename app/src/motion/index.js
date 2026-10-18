@@ -32,11 +32,10 @@
 // Turning is turned into page units with the corner calibration's scale at the middle of the
 // page, so the same turn draws the same size anywhere.
 //
-// Writing slant: down strokes lean, by 10 to 28 degrees on the real pen depending on the
-// posture. With Write on, corner calibration ends by asking for one line down, drawn the way
-// you write, and writingCorrection (a 2 x 2 matrix) shears writing so that line is upright.
-// Only the lean is corrected: lines across are kept level by eye, and a calibration line across
-// once rose 24 degrees where the writing rose 9, which tilted everything.
+// No slant correction: a version learned one from a line drawn at the end of corner
+// calibration, but those lines never matched the writing (one leaned 20 degrees where the
+// writing leaned 4, debug recording 00-14-41), since the hand is still twisted towards the last
+// corner. Writing like a mouse, the hand stays put and down strokes came out nearly upright.
 //
 // Screen directions in relative mode, two ways:
 //   Roll compensation (default). The accelerometer gives "up" (gravity), tracked as the pen
@@ -89,9 +88,6 @@ export const DEFAULT_CONFIG = {
   writingCurve: 0,
   writingMidDps: 6, // turning speed that gets the full writing gain
   writingString: 4, // lazy brush string length in px, 0 is off
-  // From the writing step of corner calibration: [a, b, c, d], row major, applied to movement
-  // while writing. null is no correction.
-  writingCorrection: null,
   calibrationMs: 2000, // how long to average the gyro for bias after a reset
   maxGapMs: 50, // ignore time gaps longer than this so a dropped packet can't fling the cursor
 };
@@ -205,11 +201,6 @@ const CORNER_AVERAGE = 6;
 // MAX_ACCELERATION_GAIN), so at 5 deg/s it's a quarter and at 80 deg/s four times.
 const WRITING_SPEED_CUTOFF_HZ = 4;
 const WRITING_TRAVEL_ACCELERATION = 1;
-// Writing calibration: a line shorter than this (page units, the page is 2 across) is a tap, and
-// a line leaning more than this is refused rather than learned, so one bad line can't warp
-// everything.
-const WRITING_MIN_LINE = 0.06;
-const WRITING_MAX_LEAN_DEG = 40;
 // With corners set, pointing past the edge of the calibrated area runs off towards infinity (and
 // beyond the horizon of a desk, back round the other side). The cursor stays within this.
 const POINTER_LIMIT = 1.5;
@@ -242,8 +233,6 @@ export function createMotion(overrides) {
   let recentPointing = [];
   let turnSum = [0, 0, 0];
   let corners = null;
-  // Writing calibration in progress: { armed, start, last, learnedPenAxis, onProgress }.
-  let writingCal = null;
   let wasPenDown = false;
   const filterPointX = createOneEuro();
   const filterPointY = createOneEuro();
@@ -375,11 +364,9 @@ export function createMotion(overrides) {
         ? precisionGain(speed, config)
         : config.writingGain * config.travelGain * accelerationGain(speed, WRITING_TRAVEL_ACCELERATION, config.accelerationMidDps);
     const [dx, dy] = turnToPage(turn);
-    // Pen up too, so the whole space is one consistent mapping the hand can get used to.
-    const c = config.writingCorrection || [1, 0, 0, 1];
     writePos = {
-      x: Math.max(-1, Math.min(1, writePos.x + gain * (c[0] * dx + c[1] * dy))),
-      y: Math.max(-1, Math.min(1, writePos.y + gain * (c[2] * dx + c[3] * dy))),
+      x: Math.max(-1, Math.min(1, writePos.x + gain * dx)),
+      y: Math.max(-1, Math.min(1, writePos.y + gain * dy)),
     };
     return [writePos.x, writePos.y];
   }
@@ -430,10 +417,6 @@ export function createMotion(overrides) {
     }
     x = Number.isFinite(x) ? Math.max(-POINTER_LIMIT, Math.min(POINTER_LIMIT, x)) : 0;
     y = Number.isFinite(y) ? Math.max(-POINTER_LIMIT, Math.min(POINTER_LIMIT, y)) : 0;
-    if (writingCal !== null) {
-      writingCalStep(right, above, penDown === true);
-      return { dx: 0, dy: 0, ready: false };
-    }
     [x, y] = applyWriting(x, y, right, above, dt, penDown);
     // dx and dy are for the debug graph only: the change, as if the page were 1000 px wide.
     const previous = lastPointer || { x: x, y: y };
@@ -454,11 +437,6 @@ export function createMotion(overrides) {
   }
 
   function cancelScreenCalibration() {
-    if (writingCal !== null) {
-      // The corners are already saved. Only the writing step is skipped.
-      finishWritingCal({ writing: 'skipped' });
-      return;
-    }
     if (corners !== null) {
       const onProgress = corners.onProgress;
       corners = null;
@@ -519,58 +497,12 @@ export function createMotion(overrides) {
     rightShift = 0;
     filterPointX.reset();
     filterPointY.reset();
-    if (config.writingMode) {
-      // The pad is still down from the last corner's tap, so a line only starts after it lifts.
-      writingCal = { armed: false, start: null, last: null, learnedPenAxis: learned, onProgress: onProgress };
-      onProgress({ step: 'draw', which: 'down' });
-      return;
-    }
-    onProgress({ step: 'done', learnedPenAxis: learned });
-  }
-
-  // ---- Writing calibration (the end of corner calibration, with Write on) ----
-  //
-  // Measures one line down, from where the pen pressed to where it lifted. onProgress gets
-  // { step: 'draw', which: 'down', retry }, then { step: 'done', writing: true, 'skipped', or
-  // 'failed', reason }.
-  function writingCalStep(right, above, penDown) {
-    const cal = writingCal;
-    if (!penDown) {
-      if (cal.start !== null) {
-        const line = turnToPage([cal.last.right - cal.start.right, cal.last.above - cal.start.above]);
-        cal.start = null;
-        if (Math.hypot(line[0], line[1]) < WRITING_MIN_LINE) {
-          cal.onProgress({ step: 'draw', which: 'down', retry: 'That was too short. Draw a longer line' });
-          return;
-        }
-        finishWritingCal(learnWritingCorrection(line));
-        return;
-      }
-      cal.armed = true;
-      return;
-    }
-    if (!cal.armed) {
-      return;
-    }
-    if (cal.start === null) {
-      cal.start = { right: right, above: above };
-    }
-    cal.last = { right: right, above: above };
-  }
-
-  function finishWritingCal(result) {
-    const cal = writingCal;
-    writingCal = null;
-    if (result.correction) {
-      config.writingCorrection = result.correction;
-    }
     clearWriting();
-    cal.onProgress({ step: 'done', learnedPenAxis: cal.learnedPenAxis, writing: result.writing, reason: result.reason });
+    onProgress({ step: 'done', learnedPenAxis: learned });
   }
 
   function clearScreenMapping() {
     config.screenMapping = null;
-    config.writingCorrection = null;
     center = null;
   }
 
@@ -804,21 +736,6 @@ export function createMotion(overrides) {
   };
 }
 
-// The writing correction from a line down ([dx, dy] in page units, y down): a shear that makes
-// it upright and leaves up and down, and lines across, as they were. Returns { writing: true,
-// correction, leanDeg } or { writing: 'failed', reason }.
-export function learnWritingCorrection(down) {
-  const [dx, dy] = down;
-  if (dy <= 0) {
-    return { writing: 'failed', reason: 'The line went up instead of down. Run K again and draw it top to bottom' };
-  }
-  const leanDeg = (Math.atan2(dx, dy) * 180) / Math.PI;
-  if (Math.abs(leanDeg) > WRITING_MAX_LEAN_DEG) {
-    return { writing: 'failed', reason: 'The line leaned too far to be a line down. Run K again and draw it top to bottom' };
-  }
-  return { writing: true, correction: [1, -dx / dy, 0, 1], leanDeg: leanDeg };
-}
-
 // Turns stored or pasted settings into a safe config: unknown keys are dropped, and values
 // of the wrong type, or axes that don't exist, fall back to the default.
 export function sanitizeConfig(raw) {
@@ -842,12 +759,6 @@ export function sanitizeConfig(raw) {
     }
     if (key === 'screenMapping') {
       if (value === null || (Array.isArray(value) && value.length === 9 && value.every((n) => typeof n === 'number' && Number.isFinite(n)))) {
-        clean[key] = value;
-      }
-      continue;
-    }
-    if (key === 'writingCorrection') {
-      if (value === null || (Array.isArray(value) && value.length === 4 && value.every((n) => typeof n === 'number' && Number.isFinite(n)))) {
         clean[key] = value;
       }
       continue;

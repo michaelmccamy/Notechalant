@@ -246,7 +246,7 @@ function startCornerCalibration() {
     return;
   }
   motion.startScreenCalibration(function (message) {
-    calibratingCorners = message.step === 'corner' || message.step === 'draw';
+    calibratingCorners = message.step === 'corner';
     cornerGuide.hidden = !calibratingCorners;
     if (message.step === 'corner') {
       cornerTitle.textContent = 'Point at the ' + CORNER_NAMES[message.index] + ' corner';
@@ -255,25 +255,9 @@ function startCornerCalibration() {
         dot.classList.toggle('done', i < message.index);
         dot.classList.toggle('current', i === message.index);
       });
-    } else if (message.step === 'draw') {
-      // Write is on: two lines, drawn the way you write, so writing comes out upright.
-      cornerTitle.textContent = message.which === 'right' ? 'Now write a line across, left to right' : 'Now write a line down, top to bottom';
-      cornerText.textContent = (message.retry ? message.retry + '. ' : '') + 'Hold the pad and draw it the way you write, about a letter tall. This straightens the lean of your writing. Esc skips this.';
-      cornerDots.forEach(function (dot) {
-        dot.classList.add('done');
-        dot.classList.remove('current');
-      });
     } else if (message.step === 'done') {
       debug.refreshSettings();
-      if (message.writing === true) {
-        tell('Screen and writing calibrated. Your writing is straightened to upright');
-      } else if (message.writing === 'failed') {
-        toolbar.setStatus('Screen calibrated, but not the writing: ' + message.reason, true);
-      } else if (message.writing === 'skipped') {
-        tell('Screen calibrated. Writing step skipped');
-      } else {
-        tell('Screen calibrated. Double tap the pad to recenter if it drifts');
-      }
+      tell('Screen calibrated. Double tap the pad to recenter if it drifts');
     } else if (message.step === 'failed') {
       toolbar.setStatus(message.reason, true);
     } else {
