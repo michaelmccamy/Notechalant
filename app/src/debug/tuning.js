@@ -12,7 +12,7 @@ import { DEFAULT_CONFIG, sanitizeConfig, smoothingToCutoff } from '../motion/ind
 const STORAGE_KEY = 'notechalant.motion';
 // Only the knobs on the panel are saved, so a later change to another default
 // (calibration time, say) isn't hidden by an old saved value.
-const TUNED_KEYS = ['pixelsPerDegree', 'acceleration', 'drawingGain', 'travelGain', 'rollCompensation', 'penAxis', 'horizontalSign', 'xVector', 'yVector', 'smoothing', 'deadzone'];
+const TUNED_KEYS = ['pointerMode', 'pointerRangeXDeg', 'pointerRangeYDeg', 'pointerSmoothing', 'pixelsPerDegree', 'acceleration', 'drawingGain', 'travelGain', 'rollCompensation', 'penAxis', 'horizontalSign', 'xVector', 'yVector', 'smoothing', 'deadzone'];
 const AXIS_NAMES = ['gx', 'gy', 'gz'];
 
 export function loadMotionSettings() {
@@ -75,6 +75,9 @@ export function createTuningControls(motion, handlers) {
     acceleration: document.getElementById('tune-acceleration'),
     drawingGain: document.getElementById('tune-drawing'),
     travelGain: document.getElementById('tune-travel'),
+    pointerRangeXDeg: document.getElementById('tune-range-x'),
+    pointerRangeYDeg: document.getElementById('tune-range-y'),
+    pointerSmoothing: document.getElementById('tune-pointer-smoothing'),
   };
   // One dropdown and one Invert checkbox per screen direction.
   const directions = {
@@ -82,6 +85,7 @@ export function createTuningControls(motion, handlers) {
     yVector: { select: document.getElementById('tune-y-axis'), invert: document.getElementById('tune-invert-y') },
   };
   const rollInput = document.getElementById('tune-roll');
+  const pointerInput = document.getElementById('tune-pointer');
   const outputs = {
     pixelsPerDegree: document.getElementById('tune-sensitivity-value'),
     smoothing: document.getElementById('tune-smoothing-value'),
@@ -89,6 +93,9 @@ export function createTuningControls(motion, handlers) {
     acceleration: document.getElementById('tune-acceleration-value'),
     drawingGain: document.getElementById('tune-drawing-value'),
     travelGain: document.getElementById('tune-travel-value'),
+    pointerRangeXDeg: document.getElementById('tune-range-x-value'),
+    pointerRangeYDeg: document.getElementById('tune-range-y-value'),
+    pointerSmoothing: document.getElementById('tune-pointer-smoothing-value'),
   };
 
   Object.assign(config, loadMotionSettings());
@@ -98,6 +105,7 @@ export function createTuningControls(motion, handlers) {
       sliders[key].value = config[key];
     });
     rollInput.checked = config.rollCompensation;
+    pointerInput.checked = config.pointerMode;
     Object.keys(directions).forEach(function (key) {
       const d = directions[key];
       const axis = vectorToAxis(config[key]);
@@ -114,6 +122,9 @@ export function createTuningControls(motion, handlers) {
     outputs.acceleration.textContent = config.acceleration > 0 ? config.acceleration.toFixed(2) : 'off';
     outputs.drawingGain.textContent = '×' + config.drawingGain.toFixed(2);
     outputs.travelGain.textContent = '×' + config.travelGain.toFixed(2);
+    outputs.pointerRangeXDeg.textContent = '±' + config.pointerRangeXDeg + '°';
+    outputs.pointerRangeYDeg.textContent = '±' + config.pointerRangeYDeg + '°';
+    outputs.pointerSmoothing.textContent = config.pointerSmoothing > 0 ? config.pointerSmoothing.toFixed(2) : 'off';
   }
 
   function changed() {
@@ -135,6 +146,13 @@ export function createTuningControls(motion, handlers) {
     });
     blurOnChange(sliders[key]);
   });
+
+  pointerInput.addEventListener('input', function () {
+    config.pointerMode = pointerInput.checked;
+    changed();
+    handlers.onStatus(config.pointerMode ? 'Pointer mode: the cursor goes where the pen points' : 'Relative mode: turning moves the cursor');
+  });
+  blurOnChange(pointerInput);
 
   rollInput.addEventListener('input', function () {
     config.rollCompensation = rollInput.checked;

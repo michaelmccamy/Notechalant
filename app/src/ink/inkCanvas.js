@@ -111,6 +111,43 @@ export function createInkCanvas(canvas, options) {
     moveTo(x, y, penDown);
   }
 
+  // Pointer mode: x and y from -1 to 1 across the page, clamped to it.
+  function pointAt(x, y, penDown) {
+    const px = ((Math.max(-1, Math.min(1, x)) + 1) / 2) * cssWidth;
+    const py = ((Math.max(-1, Math.min(1, y)) + 1) / 2) * cssHeight;
+    moveTo(px, py, penDown);
+  }
+
+  // Removes up to `count` dots (strokes under 6 px across) from the end, with their undo
+  // entries. A double tap to recenter leaves two, and they aren't meant as ink.
+  function dropTrailingDots(count) {
+    finishStroke();
+    for (let i = 0; i < count && strokes.length > 0; i++) {
+      const last = strokes[strokes.length - 1];
+      const top = undoStack[undoStack.length - 1];
+      if (isText(last) || top === undefined || top.type !== 'stroke' || !isDot(last)) {
+        break;
+      }
+      strokes.pop();
+      undoStack.pop();
+    }
+    inkChanged();
+  }
+
+  function isDot(stroke) {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    for (const p of stroke.points) {
+      minX = Math.min(minX, p.x);
+      minY = Math.min(minY, p.y);
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, p.y);
+    }
+    return maxX - minX < 6 && maxY - minY < 6;
+  }
+
   // A copy, for the debug trail.
   function getCursor() {
     return { x: cursor.x, y: cursor.y, down: cursor.down };
@@ -299,6 +336,8 @@ export function createInkCanvas(canvas, options) {
   return {
     moveTo,
     moveBy,
+    pointAt,
+    dropTrailingDots,
     centerCursor,
     getCursor,
     hideCursor,

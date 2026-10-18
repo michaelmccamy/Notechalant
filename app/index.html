@@ -121,6 +121,11 @@
             <canvas id="ink"></canvas>
             <canvas id="debug-trail" hidden></canvas>
           </div>
+          <div class="calibrating" id="calibrating" role="status" aria-live="polite" hidden>
+            <div class="calibrating-title">Hold the pen still</div>
+            <div class="calibrating-text" id="calibrating-text">Measuring the gyro. About 2 seconds</div>
+            <div class="calibrating-bar"><span id="calibrating-fill"></span></div>
+          </div>
           <div class="page-message" id="page-message" hidden>
             <div class="page-message-title"></div>
             <div class="page-message-text"></div>
@@ -186,6 +191,24 @@
         </div>
         <div class="debug-wizard-text" id="debug-wizard-text">Hold still, then draw a line right, then a line down, 2 seconds each, the way you write. The cursor stays put meanwhile.</div>
         <progress id="debug-wizard-bar" max="1" value="0" hidden></progress>
+        <label class="tuning-row toggle" title="Laser pointer: the cursor goes where the pen points. Off: turning speed moves the cursor, like a mouse">
+          <span><input id="tune-pointer" type="checkbox" /> Pointer mode</span>
+        </label>
+        <label class="tuning-row" for="tune-range-x">
+          <span>Pointer width</span>
+          <output id="tune-range-x-value"></output>
+        </label>
+        <input id="tune-range-x" type="range" min="5" max="45" step="1" />
+        <label class="tuning-row" for="tune-range-y">
+          <span>Pointer height</span>
+          <output id="tune-range-y-value"></output>
+        </label>
+        <input id="tune-range-y" type="range" min="4" max="30" step="1" />
+        <label class="tuning-row" for="tune-pointer-smoothing">
+          <span>Pointer smoothing</span>
+          <output id="tune-pointer-smoothing-value"></output>
+        </label>
+        <input id="tune-pointer-smoothing" type="range" min="0" max="1" step="0.05" />
         <label class="tuning-row toggle" title="Uses gravity from the accelerometer, so rolling the pen in your hand doesn't mix up and down with sideways">
           <span><input id="tune-roll" type="checkbox" /> Roll compensation</span>
           <span class="debug-readout" id="debug-up"></span>

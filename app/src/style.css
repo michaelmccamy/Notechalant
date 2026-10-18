@@ -1231,6 +1231,57 @@ body.presenting .workspace {
 .toast.shown {
   opacity: 1;
 }
+/* "Hold the pen still" card while the pen calibrates. Big and in the middle of the page,
+   because moving restarts calibration and the status bar is easy to miss. */
+.calibrating {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 15;
+  transform: translate(-50%, -50%);
+  width: min(420px, calc(100% - 32px));
+  padding: 24px 28px;
+  text-align: center;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+}
+
+.calibrating[hidden] {
+  display: none;
+}
+
+.calibrating-title {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent-strong);
+}
+
+.calibrating-text {
+  margin-top: 6px;
+  font-size: 16px;
+  color: var(--soft);
+}
+
+.calibrating-bar {
+  height: 10px;
+  margin-top: 16px;
+  overflow: hidden;
+  background: var(--accent-tint);
+  border-radius: 5px;
+}
+
+.calibrating-bar span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.1s linear;
+}
+
 /* Motion debug panel, toggled with D. Floats over the page so it works on any tab. */
 .debug {
   position: fixed;

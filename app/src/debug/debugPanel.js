@@ -99,6 +99,9 @@ export function createDebugPanel(motion, ink, handlers) {
     reset: function () {
       motion.reset();
     },
+    recenter: function () {
+      motion.recenter();
+    },
     getState: motion.getState,
     config: motion.config,
   };

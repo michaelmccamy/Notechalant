@@ -6,7 +6,15 @@
 // user holds the pen still. Every setting is read from `config` on each sample, so the debug
 // panel (D key) can change them live.
 //
-// Screen directions, two ways:
+// Two modes:
+//   Pointer (default). Like a laser pointer: the cursor goes where the pen points. Pitch comes
+//   from gravity and the pen axis, yaw from the gyro integrated around gravity, and both map
+//   straight to a spot on the page (pointerRangeXDeg either side fills the width). Recenter()
+//   makes wherever the pen points now the middle. update() returns { absolute: true, x, y }
+//   with x and y from -1 to 1 across the page.
+//   Relative. Turning speed moves the cursor, like a mouse. The rest of this comment is about it.
+//
+// Screen directions in relative mode, two ways:
 //   Roll compensation (default). The accelerometer gives "up" (gravity), tracked as the pen
 //   moves. Left and right is turning around up, and up and down is turning around the
 //   sideways axis, up x penAxis, where penAxis is the way the pen points in sensor axes.
@@ -18,6 +26,11 @@
 export const AXES = ['gx', 'gy', 'gz'];
 
 export const DEFAULT_CONFIG = {
+  pointerMode: true,
+  pointerRangeXDeg: 20, // pointing this far left or right of center reaches the page edge
+  pointerRangeYDeg: 12, // and this far up or down
+  pointerSmoothing: 0.5, // One Euro filter on the pointing angles, 0 is off
+  pointerBeta: 0.3, // how quickly it opens up for fast movement, so it doesn't lag
   rollCompensation: true,
   // Roll compensation: the way the pen points, as a unit vector in sensor axes (gx, gy, gz),
   // and 1 or -1 to flip left and right. Measured on the breadboard pen from a down stroke.
@@ -95,9 +108,11 @@ const STILL_MAX_STD_DPS = 2.5;
 const WIZARD_STEP_MS = 2000;
 const MIN_TILT_DEG = 5;
 
-// Gravity is the accelerometer smoothed over about this long, so the hand's own acceleration
-// while writing averages out. Readings far from 1 g are mostly hand acceleration and are skipped.
-const GRAVITY_SMOOTHING_MS = 500;
+// Gravity is a complementary filter: the gyro turns the last estimate as the pen turns, and the
+// accelerometer pulls it back over about this long, so drift can't build up while the hand's
+// own acceleration while writing averages out. Readings far from 1 g are mostly hand
+// acceleration and are skipped.
+const GRAVITY_SMOOTHING_MS = 800;
 const GRAVITY_MIN_G = 0.8;
 const GRAVITY_MAX_G = 1.2;
 // When the pen points almost straight up or down, the sideways axis is undefined. Below this,
@@ -155,6 +170,13 @@ export function createMotion(overrides) {
   let wizard = null;
   // Unit vector pointing up (away from gravity) in sensor axes, or null until calibrated.
   let up = null;
+  // Pointer mode: yaw is the integrated turn around up, in degrees. center is the yaw and pitch
+  // the pen pointed at when last recentered, or null to recenter on the next sample.
+  let yaw = 0;
+  let center = null;
+  let lastPointer = null;
+  const filterPointX = createOneEuro();
+  const filterPointY = createOneEuro();
 
   function calibrate(sample) {
     if (calibrationStartT === null) {
@@ -187,22 +209,65 @@ export function createMotion(overrides) {
     }
     bias = mean;
     up = unitOrNull(accelSums);
+    // Pointer mode centers on wherever the pen points once calibration is done.
+    center = null;
     movedDuringCalibration = false;
   }
 
   // Follows gravity as the pen turns and rolls.
-  function trackGravity(sample, dt) {
+  // rate is in deg/s with the bias removed.
+  function trackGravity(sample, rate, dt) {
     const accel = [sample.ax, sample.ay, sample.az];
     const g = Math.hypot(accel[0], accel[1], accel[2]);
     if (up === null) {
       up = unitOrNull(accel);
       return;
     }
-    if (g < GRAVITY_MIN_G || g > GRAVITY_MAX_G) {
-      return;
+    // A direction fixed in the room turns the opposite way to the pen: up -= (w x up) dt.
+    const w = [(rate[0] * Math.PI) / 180, (rate[1] * Math.PI) / 180, (rate[2] * Math.PI) / 180];
+    const turn = cross(w, up);
+    let next = [up[0] - turn[0] * dt, up[1] - turn[1] * dt, up[2] - turn[2] * dt];
+    if (g >= GRAVITY_MIN_G && g <= GRAVITY_MAX_G) {
+      const k = Math.min(1, (dt * 1000) / GRAVITY_SMOOTHING_MS);
+      next = [next[0] + k * (accel[0] / g - next[0]), next[1] + k * (accel[1] / g - next[1]), next[2] + k * (accel[2] / g - next[2])];
     }
-    const k = Math.min(1, (dt * 1000) / GRAVITY_SMOOTHING_MS);
-    up = unitOrNull([up[0] + k * (accel[0] / g - up[0]), up[1] + k * (accel[1] / g - up[1]), up[2] + k * (accel[2] / g - up[2])]) || up;
+    up = unitOrNull(next) || up;
+  }
+
+  // Where the pen points: yaw (left positive, integrated) and pitch (up positive), in degrees.
+  function pointing() {
+    const axis = unitOrNull(config.penAxis);
+    const lift = Math.max(-1, Math.min(1, dot(axis, up)));
+    return { yaw: yaw, pitch: (Math.asin(lift) * 180) / Math.PI };
+  }
+
+  // Makes wherever the pen points now the middle of the page.
+  function recenter() {
+    center = null;
+  }
+
+  function pointerUpdate(rate, dt) {
+    yaw += dot(rate, up) * dt;
+    const now = pointing();
+    if (center === null) {
+      center = now;
+      filterPointX.reset();
+      filterPointY.reset();
+    }
+    // Degrees right of and below the center.
+    let right = -(now.yaw - center.yaw) * config.horizontalSign;
+    let below = -(now.pitch - center.pitch);
+    if (config.pointerSmoothing > 0) {
+      const minCutoff = smoothingToCutoff(config.pointerSmoothing);
+      right = filterPointX.filter(right, dt, minCutoff, config.pointerBeta);
+      below = filterPointY.filter(below, dt, minCutoff, config.pointerBeta);
+    }
+    const x = right / config.pointerRangeXDeg;
+    const y = below / config.pointerRangeYDeg;
+    // dx and dy are for the debug graph only: the change, as if the page were 1000 px wide.
+    const previous = lastPointer || { x: x, y: y };
+    lastPointer = { x: x, y: y };
+    return { absolute: true, x: x, y: y, dx: (x - previous.x) * 500, dy: (y - previous.y) * 500, ready: true };
   }
 
   // Rotation rates (deg/s, bias removed) to cursor rates, right and down positive.
@@ -245,12 +310,16 @@ export function createMotion(overrides) {
     }
     const dt = dtMs / 1000;
 
-    trackGravity(sample, dt);
     const rate = [sample.gx - bias.gx, sample.gy - bias.gy, sample.gz - bias.gz];
+    trackGravity(sample, rate, dt);
     if (wizard !== null) {
       wizardStep(rate, sample.t, dt);
       return { dx: 0, dy: 0, ready: false };
     }
+    if (config.pointerMode && up !== null) {
+      return pointerUpdate(rate, dt);
+    }
+    lastPointer = null;
     let [rateX, rateY] = screenRates(rate);
 
     if (config.smoothing > 0) {
@@ -300,7 +369,7 @@ export function createMotion(overrides) {
   function startAxisWizard(onProgress) {
     cancelAxisWizard();
     restartCalibration();
-    wizard = { step: 'still', onProgress: onProgress, startT: null, sum: [0, 0, 0], upSum: [0, 0, 0], right: null };
+    wizard = { step: 'still', onProgress: onProgress, startT: null, sum: [0, 0, 0], startUp: null, right: null };
     onProgress({ step: 'still', progress: 0 });
   }
 
@@ -323,10 +392,10 @@ export function createMotion(overrides) {
     if (wizard.step === 'still') {
       wizard.step = 'right';
       wizard.startT = t;
+      wizard.startUp = up;
     }
     for (let i = 0; i < 3; i++) {
       wizard.sum[i] += rate[i] * dt;
-      wizard.upSum[i] += up === null ? 0 : up[i];
     }
     const elapsed = t - wizard.startT;
     if (elapsed < WIZARD_STEP_MS) {
@@ -340,13 +409,15 @@ export function createMotion(overrides) {
       finishWizard({ step: 'failed', reason: 'No ' + wizard.step + ' line seen. Draw a longer line and try again' });
       return;
     }
-    const measured = { vector: normalize(tilt), degrees: degrees, dominant: dominantAxis(tilt), up: unitOrNull(wizard.upSum) };
+    // up is gravity from the start of the step, while the pen was still level: drawing the
+    // line tips it, and an average would skew the pen axis by about half the tilt.
+    const measured = { vector: normalize(tilt), degrees: degrees, dominant: dominantAxis(tilt), up: wizard.startUp };
     if (wizard.step === 'right') {
       wizard.right = measured;
       wizard.step = 'down';
       wizard.startT = t;
       wizard.sum = [0, 0, 0];
-      wizard.upSum = [0, 0, 0];
+      wizard.startUp = up;
       wizard.onProgress({ step: 'down', progress: 0 });
       return;
     }
@@ -384,6 +455,9 @@ export function createMotion(overrides) {
     count = 0;
     bias = null;
     up = null;
+    yaw = 0;
+    center = null;
+    lastPointer = null;
     movedDuringCalibration = false;
     filterX.reset();
     filterY.reset();
@@ -405,7 +479,7 @@ export function createMotion(overrides) {
     return { calibrating: bias === null, progress: progress, bias: bias, moved: movedDuringCalibration, up: up };
   }
 
-  return { update, reset, getState, startAxisWizard, cancelAxisWizard, config };
+  return { update, reset, recenter, getState, startAxisWizard, cancelAxisWizard, config };
 }
 
 // Turns stored or pasted settings into a safe config: unknown keys are dropped, and values

@@ -41,22 +41,26 @@ export function createDebugRecorder() {
       line.bias = bias;
       lines.push(JSON.stringify(line));
     }
-    lines.push(
-      JSON.stringify({
-        t: sample.t,
-        gx: sample.gx,
-        gy: sample.gy,
-        gz: sample.gz,
-        ax: sample.ax,
-        ay: sample.ay,
-        az: sample.az,
-        pen: sample.pen,
-        space: spaceDown ? 1 : 0,
-        dx: round(movement.dx),
-        dy: round(movement.dy),
-        ready: movement.ready,
-      }),
-    );
+    const line = {
+      t: sample.t,
+      gx: sample.gx,
+      gy: sample.gy,
+      gz: sample.gz,
+      ax: sample.ax,
+      ay: sample.ay,
+      az: sample.az,
+      pen: sample.pen,
+      space: spaceDown ? 1 : 0,
+      dx: round(movement.dx),
+      dy: round(movement.dy),
+      ready: movement.ready,
+    };
+    // Pointer mode also says where on the page the cursor went, -1 to 1 across.
+    if (movement.absolute) {
+      line.x = round(movement.x);
+      line.y = round(movement.y);
+    }
+    lines.push(JSON.stringify(line));
     count++;
     if (firstT === null) {
       firstT = sample.t;

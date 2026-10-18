@@ -74,7 +74,35 @@ const debug = createDebugPanel(motion, ink, {
     return active === null ? null : active.name;
   },
 });
-const hub = createInputHub({ ink: ink, motion: debug.motion });
+const hub = createInputHub({
+  ink: ink,
+  motion: debug.motion,
+  // Double tap on the pen's pad: the two taps left dots, which aren't meant as ink.
+  onDoubleTap: function () {
+    ink.dropTrailingDots(2);
+    hub.recenter();
+    toolbar.setStatus('Centered: the pen points at the middle of the page now');
+  },
+});
+
+// While the pen is calibrating, a big card on the page says to hold still. It's easy to miss
+// in the status bar, and moving restarts the calibration.
+const calibratingEl = document.getElementById('calibrating');
+const calibratingText = document.getElementById('calibrating-text');
+const calibratingFill = document.getElementById('calibrating-fill');
+let wasCalibrating = false;
+setInterval(function () {
+  const state = motion.getState();
+  const showing = hub.isReceiving() && state.calibrating;
+  calibratingEl.hidden = !showing;
+  if (showing) {
+    calibratingText.textContent = state.moved ? 'You moved, so it started over. Keep it still' : 'Measuring the gyro. About 2 seconds';
+    calibratingFill.style.width = Math.round(state.progress * 100) + '%';
+  } else if (wasCalibrating && !state.calibrating) {
+    toolbar.setStatus(motion.config.pointerMode ? 'Ready. Where the pen points now is the middle. Double tap the pad to recenter' : 'Ready');
+  }
+  wasCalibrating = showing;
+}, 100);
 
 attachMouse(canvas, ink);
 
@@ -936,7 +964,7 @@ function onRemoteButton(button) {
       tell(tabs.length > 1 ? switchTab(button === 'NEXT_TAB' ? 1 : -1).name : 'Only one tab open');
       break;
     case 'RECENTER':
-      ink.centerCursor();
+      hub.recenter();
       tell('Cursor recentered');
       break;
     case 'CLEAR':
@@ -1005,7 +1033,7 @@ window.addEventListener('keydown', function (event) {
     event.preventDefault();
     saveCopy();
   } else if (event.key === 'c' || event.key === 'C') {
-    ink.centerCursor();
+    hub.recenter();
   } else if (event.key === 'r' || event.key === 'R') {
     hub.recalibrate();
     toolbar.setStatus('Recalibrating. Hold still');
