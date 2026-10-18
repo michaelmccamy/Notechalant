@@ -17,11 +17,11 @@
 //   Relative. Turning speed moves the cursor, like a mouse. The rest of this comment is about it.
 //
 // Writing mode (writingMode, the toolbar's Write toggle) works in both. While the pen is down,
-// movement is scaled by precisionGain (ink/writing.js): writingGain at writing speed, much less
-// for the slow drift of a shaky hand. In pointer mode that leaves the ink offset from where the
-// pen points. The offset holds for WRITING_HOLD_MS after the pen lifts, with pen-up moves scaled
-// the same way, so the gaps between letters match the letters. Then the cursor glides back to
-// where the pen points. The lazy brush and the curve fit happen in the ink canvas.
+// movement is scaled by precisionGain (ink/writing.js): writingGain at writing speed, less for
+// the slow drift of a shaky hand. In pointer mode that leaves the ink offset from where the pen
+// points. With the pen up, the offset shrinks as the pen moves, so the cursor catches up while
+// you move on to the next letter (which also spaces the letters out) but never slides on its
+// own while you hold still. The lazy brush and the curve fit happen in the ink canvas.
 //
 // Screen directions in relative mode, two ways:
 //   Roll compensation (default). The accelerometer gives "up" (gravity), tracked as the pen
@@ -68,10 +68,10 @@ export const DEFAULT_CONFIG = {
   drawingGain: 0.8,
   travelGain: 1.3,
   writingMode: false,
-  writingGain: 0.5, // writing mode: movement while drawing, as a share of pointer movement
-  writingCurve: 0.8, // how much slower turning is shrunk, 0 is a plain gain
-  writingMidDps: 25, // turning speed that gets the full writing gain
-  writingString: 10, // lazy brush string length in px, 0 is off
+  writingGain: 0.6, // writing mode: movement while drawing, as a share of pointer movement
+  writingCurve: 0.6, // how much slower turning is shrunk, 0 is a plain gain
+  writingMidDps: 6, // turning speed that gets the full writing gain
+  writingString: 4, // lazy brush string length in px, 0 is off
   calibrationMs: 2000, // how long to average the gyro for bias after a reset
   maxGapMs: 50, // ignore time gaps longer than this so a dropped packet can't fling the cursor
 };
@@ -179,10 +179,12 @@ function cross(a, b) {
 const CORNER_LOOKBACK = 10;
 const CORNER_AVERAGE = 6;
 
-// Writing mode in pointer mode: how long the ink offset holds after the pen lifts, then how
-// quickly the cursor glides back to where the pen points.
-const WRITING_HOLD_MS = 700;
-const WRITING_RETURN_MS = 200;
+// Writing mode in pointer mode. The precision curve sees the turning speed smoothed at this
+// cutoff, so a letter slowing down round a curve isn't shrunk there, while tremor (8 to 12 Hz)
+// is averaged away. With the pen up, the offset shrinks by e for every WRITING_RETURN_DEG the
+// pen turns, so holding still doesn't move the cursor.
+const WRITING_SPEED_CUTOFF_HZ = 4;
+const WRITING_RETURN_DEG = 1.5;
 
 export function createMotion(overrides) {
   const config = Object.assign({}, DEFAULT_CONFIG, overrides || {});
@@ -220,7 +222,7 @@ export function createMotion(overrides) {
   let writeOffset = { x: 0, y: 0 };
   let lastWriteTarget = null;
   let lastWriteAngles = null;
-  let sinceLiftMs = Infinity;
+  let writeVelocity = [0, 0];
 
   function calibrate(sample) {
     if (calibrationStartT === null) {
@@ -295,7 +297,7 @@ export function createMotion(overrides) {
     writeOffset = { x: 0, y: 0 };
     lastWriteTarget = null;
     lastWriteAngles = null;
-    sinceLiftMs = Infinity;
+    writeVelocity = [0, 0];
   }
 
   // Shifts the pointer spot (x, y) by the writing offset, updated for this sample.
@@ -308,18 +310,25 @@ export function createMotion(overrides) {
     const previousAngles = lastWriteAngles || { right: right, above: above };
     lastWriteTarget = { x: x, y: y };
     lastWriteAngles = { right: right, above: above };
-    sinceLiftMs = penDown === true ? 0 : sinceLiftMs + dt * 1000;
-    if (sinceLiftMs < WRITING_HOLD_MS) {
-      // The pen moved (x - previous.x). The ink moves gain times that, so the offset takes the rest.
-      const speed = Math.hypot(right - previousAngles.right, above - previousAngles.above) / dt;
-      const gain = penDown === true ? precisionGain(speed, config) : config.writingGain;
-      writeOffset.x += (gain - 1) * (x - previous.x);
-      writeOffset.y += (gain - 1) * (y - previous.y);
-    } else {
-      const keep = Math.exp((-dt * 1000) / WRITING_RETURN_MS);
+    const k = lowPassAlpha(WRITING_SPEED_CUTOFF_HZ, dt);
+    writeVelocity = [
+      writeVelocity[0] + k * ((right - previousAngles.right) / dt - writeVelocity[0]),
+      writeVelocity[1] + k * ((above - previousAngles.above) / dt - writeVelocity[1]),
+    ];
+    const speed = Math.hypot(writeVelocity[0], writeVelocity[1]);
+    if (penDown !== true) {
+      // The smaller of this sample's turn and the smoothed speed: the smoothed one lingers for a
+      // moment after the hand stops, and the cursor would slide on its own then.
+      const turned = Math.hypot(right - previousAngles.right, above - previousAngles.above);
+      const keep = Math.exp(-Math.min(turned, speed * dt) / WRITING_RETURN_DEG);
       writeOffset.x *= keep;
       writeOffset.y *= keep;
+      return [x + writeOffset.x, y + writeOffset.y];
     }
+    // The pen moved (x - previous.x). The ink moves gain times that, so the offset takes the rest.
+    const gain = precisionGain(speed, config);
+    writeOffset.x += (gain - 1) * (x - previous.x);
+    writeOffset.y += (gain - 1) * (y - previous.y);
     return [x + writeOffset.x, y + writeOffset.y];
   }
 

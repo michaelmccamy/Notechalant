@@ -1,9 +1,12 @@
 // Writing mode: three things that steady handwriting from an air pen. No DOM, so it runs under
 // `npm test` and in tools/stroke-straightness.mjs.
 //
-//   precisionGain   slow turning moves the ink much less than fast turning, so hand tremor
-//                   (slow, small) mostly disappears while real strokes (faster) still draw.
-//                   motion/index.js applies it while the pen is down.
+//   precisionGain   slow turning moves the ink much less than fast turning, so the slow drift
+//                   of a shaky hand mostly disappears while real strokes still draw. Writing on
+//                   the real pen turns it 11 to 27 deg/s (median, debug recordings), so the
+//                   full gain starts well below that: shrinking the slow parts of a letter more
+//                   than the fast parts bends it out of shape (an e's loop came out squashed).
+//                   motion/index.js applies it while the pen is down, to a smoothed speed.
 //   lazyFollow      a lazy brush: the ink point hangs off the cursor on a string of length
 //                   radius, and only moves when the cursor pulls the string tight. Wobble inside
 //                   the string never reaches the ink. inkCanvas.js applies it while drawing.
@@ -13,7 +16,7 @@
 
 // Below the reference speed the gain falls off as (speed / mid) to the power curve, but never
 // below this share of the full writing gain, so a slow, careful stroke still draws.
-const MIN_PRECISION = 0.08;
+const MIN_PRECISION = 0.3;
 
 // speedDps is how fast the pen turns, in degrees per second. Returns the multiplier on cursor
 // movement: config.writingGain at or above config.writingMidDps, less below it.

@@ -6,16 +6,16 @@ import assert from 'node:assert/strict';
 import { precisionGain, lazyFollow, smoothStroke, simplify } from '../src/ink/writing.js';
 import { createMotion, DEFAULT_CONFIG } from '../src/motion/index.js';
 
-test('precision curve: slow turning moves much less than fast, and never more than the writing gain', function () {
-  const config = { writingGain: 0.5, writingCurve: 0.8, writingMidDps: 25 };
-  const tremor = precisionGain(2, config);
-  const writing = precisionGain(25, config);
-  assert.equal(writing, 0.5);
-  assert.equal(precisionGain(200, config), 0.5, 'a flick is capped');
-  assert.ok(tremor < writing / 5, 'tremor at 2 deg/s gets under a fifth: ' + tremor);
-  assert.ok(precisionGain(0, config) > 0, 'a slow careful stroke still draws a little');
-  assert.equal(precisionGain(2, Object.assign({}, config, { writingCurve: 0 })), 0.5, 'curve 0 is a plain gain');
-  assert.ok(DEFAULT_CONFIG.writingGain < 1, 'lower overall gain than pointer mode');
+test('precision curve: slow drift moves much less than writing, and never more than the writing gain', function () {
+  const config = DEFAULT_CONFIG;
+  const drift = precisionGain(1, config);
+  // Writing on the real pen turns it 11 to 27 deg/s, all at the full gain, so letters keep their shape.
+  assert.equal(precisionGain(11, config), config.writingGain);
+  assert.equal(precisionGain(200, config), config.writingGain, 'a flick is capped');
+  assert.ok(drift < config.writingGain * 0.4, 'drift at 1 deg/s: ' + drift);
+  assert.ok(precisionGain(0, config) >= config.writingGain * 0.3, 'a slow careful stroke still draws');
+  assert.equal(precisionGain(2, Object.assign({}, config, { writingCurve: 0 })), config.writingGain, 'curve 0 is a plain gain');
+  assert.ok(config.writingGain < 1, 'lower overall gain than pointer mode');
 });
 
 test('lazy brush: movement inside the string never moves the ink', function () {
@@ -93,16 +93,17 @@ function writingMotion(overrides) {
   return createMotion(Object.assign({ calibrationMs: 0, penAxis: [0, 1, 0], pointerSmoothing: 0, writingMode: true }, overrides));
 }
 
-test('writing mode: strokes draw at the writing gain, tremor barely moves the ink', function () {
+test('writing mode: strokes draw at the writing gain, slow drift barely moves the ink', function () {
+  const gain = DEFAULT_CONFIG.writingGain;
   const motion = writingMotion();
   const state = { t: 0 };
   feed(motion, state, 0.2, 0, 0);
-  // A 10 degree stroke right at writing speed.
+  // A 10 degree stroke right at writing speed: the pointer would go to 0.5.
   const stroke = feed(motion, state, 0.4, -25, 1);
-  assert.ok(Math.abs(stroke.x - 0.25) < 0.01, 'half of the pointer move: ' + stroke.x);
-  // Then a slow 1 degree drift, like a shaky hand.
-  const drift = feed(motion, state, 0.5, -2, 1);
-  assert.ok(drift.x - stroke.x < 0.01, 'a 0.05 pointer drift moves the ink ' + (drift.x - stroke.x).toFixed(4));
+  assert.ok(Math.abs(stroke.x - 0.5 * gain) < 0.02, 'writing gain times the pointer move: ' + stroke.x);
+  // Then a slow half degree drift, like a shaky hand: 0.025 for the pointer.
+  const drift = feed(motion, state, 0.5, -1, 1);
+  assert.ok(drift.x - stroke.x < 0.012, 'the ink moves ' + (drift.x - stroke.x).toFixed(4));
 
   const off = writingMotion({ writingMode: false });
   const offState = { t: 0 };
@@ -110,17 +111,19 @@ test('writing mode: strokes draw at the writing gain, tremor barely moves the in
   assert.ok(Math.abs(feed(off, offState, 0.4, -25, 1).x - 0.5) < 0.01, 'off: the plain pointer');
 });
 
-test('writing mode: the gap after a letter matches it, then the cursor glides back to the pen', function () {
+test('writing mode: after lifting, the cursor stays put until the pen moves, then catches up', function () {
   const motion = writingMotion();
   const state = { t: 0 };
   feed(motion, state, 0.2, 0, 0);
   const letter = feed(motion, state, 0.4, -25, 1);
-  // Moving on to the next letter right after lifting is scaled the same way.
-  const gap = feed(motion, state, 0.2, -25, 0);
-  assert.ok(Math.abs(gap.x - letter.x - 0.125) < 0.01, 'gap at writing scale: ' + (gap.x - letter.x));
-  // After a pause, it's back where the pen points (15 degrees right, x = 0.75).
-  const rested = feed(motion, state, 2, 0, 0);
-  assert.ok(Math.abs(rested.x - 0.75) < 0.01, 'back to the pointer: ' + rested.x);
+  // Holding still with the pen up: no sliding on its own.
+  const held = feed(motion, state, 2, 0, 0);
+  assert.ok(Math.abs(held.x - letter.x) < 0.005, 'stays put: ' + letter.x + ' to ' + held.x);
+  // Moving 5 degrees on to the next spot: it catches up with where the pen points (x = 0.75).
+  const moved = feed(motion, state, 0.2, -25, 0);
+  const rested = feed(motion, state, 0.3, 0, 0);
+  assert.ok(moved.x > held.x + 0.25, 'the move goes further than the pointer, to catch up');
+  assert.ok(Math.abs(rested.x - 0.75) < 0.03, 'caught up: ' + rested.x);
   motion.recenter();
   const centered = feed(motion, state, 0.1, 0, 0);
   assert.ok(Math.abs(centered.x) < 1e-6, 'recenter clears the offset');

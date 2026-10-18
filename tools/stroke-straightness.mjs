@@ -4,7 +4,9 @@
 //   node tools/stroke-straightness.mjs [recording.jsonl ...]
 //
 // With no files it uses every recording in data/recordings/debug/ that has the pen down. Each
-// recording runs in pointer mode with the bias it was recorded with. The ink is built the way
+// recording runs in pointer mode with the bias and motion settings it was recorded with. If the
+// settings change to a new screen mapping partway, the recording starts with corner
+// calibration, so that runs too, from the same taps. The ink is built the way
 // inkCanvas.js builds it (points at least 1.5 px apart) on a 1200 x 750 page.
 //
 // Measures, per stroke. Writing mode draws smaller, so each one ignores size:
@@ -32,19 +34,29 @@ const files = process.argv.length > 2 ? process.argv.slice(2) : readdirSync(dir)
 const VARIANTS = [
   { name: 'before (pointer mode)', writing: false, lazy: 0, smooth: false },
   { name: 'precision curve', writing: true, lazy: 0, smooth: false },
-  { name: '+ lazy brush', writing: true, lazy: 10, smooth: false },
-  { name: '+ curve fit (Writing mode)', writing: true, lazy: 10, smooth: true },
+  { name: '+ lazy brush', writing: true, lazy: 4, smooth: false },
+  { name: '+ curve fit (Writing mode)', writing: true, lazy: 4, smooth: true },
 ];
 
 function load(file) {
   const rows = readFileSync(file, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line));
   const settings = rows.find((r) => r.type === 'settings') || {};
   const samples = rows.filter((r) => typeof r.gx === 'number');
-  return { bias: settings.bias || null, samples: samples };
+  const mappings = rows.filter((r) => r.type === 'settings').map((r) => JSON.stringify(r.config && r.config.screenMapping));
+  const config = {};
+  for (const [key, value] of Object.entries(settings.config || {})) {
+    if (!key.startsWith('writing')) {
+      config[key] = value;
+    }
+  }
+  return { bias: settings.bias || null, samples: samples, config: config, calibrates: new Set(mappings).size > 1 };
 }
 
 function strokesFor(recording, variant) {
-  const motion = createMotion({ pointerMode: true, calibrationMs: 0, writingMode: variant.writing, writingString: variant.lazy });
+  const motion = createMotion(Object.assign({}, recording.config, { pointerMode: true, calibrationMs: 0, writingMode: variant.writing }));
+  if (recording.calibrates) {
+    motion.startScreenCalibration(function () {});
+  }
   const bias = recording.bias || { gx: 0, gy: 0, gz: 0 };
   const strokes = [];
   let current = null;
@@ -113,6 +125,9 @@ function wiggle(points) {
   for (let i = 2; i < r.length; i++) {
     const h1 = Math.atan2(r[i - 1].y - r[i - 2].y, r[i - 1].x - r[i - 2].x);
     const h2 = Math.atan2(r[i].y - r[i - 1].y, r[i].x - r[i - 1].x);
+    if (Math.hypot(r[i].x - r[i - 1].x, r[i].y - r[i - 1].y) < 1e-6 || Math.hypot(r[i - 1].x - r[i - 2].x, r[i - 1].y - r[i - 2].y) < 1e-6) {
+      continue;
+    }
     let d = h2 - h1;
     while (d > Math.PI) d -= 2 * Math.PI;
     while (d < -Math.PI) d += 2 * Math.PI;
