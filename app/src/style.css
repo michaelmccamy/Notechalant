@@ -1444,7 +1444,9 @@ body.presenting .toolbar,
 body.presenting .sidebar,
 body.presenting .notes,
 body.presenting .tabs,
-body.presenting .pagebar {
+body.presenting .pagebar,
+body.presenting .debug,
+body.presenting #debug-trail {
   display: none;
 }
 

@@ -476,6 +476,34 @@ test('corner calibration: point at four corners, and the page fills exactly that
   assert.ok(Math.abs(at.y - -0.5) < 0.05, 'still half way up ' + JSON.stringify(at));
 });
 
+test('corner calibration also learns the pen direction, so a remounted sensor needs nothing else', function () {
+  const pen = heldPen(-Math.PI / 3);
+  // Settings left over from before the sensor moved: wrong direction and wrong sign.
+  const motion = createMotion({ calibrationMs: 0, penAxis: [0, 0, 1], horizontalSign: -1, pointerSmoothing: 0 });
+  penScript(motion, pen, [{ hold: 0.3 }]);
+  let done = null;
+  motion.startScreenCalibration(function (m) {
+    if (m.step === 'done') done = m;
+  });
+  penScript(motion, pen, [
+    { right: -15, up: 9, hold: 0.3, tap: true },
+    { right: 30, hold: 0.3, tap: true },
+    { up: -18, hold: 0.3, tap: true },
+    { right: -30, hold: 0.3, tap: true },
+  ]);
+  assert.ok(done !== null && done.learnedPenAxis, 'calibrated and learned the pen');
+  assert.equal(motion.config.horizontalSign, 1);
+  const len = Math.hypot(...PEN);
+  for (let i = 0; i < 3; i++) {
+    assert.ok(Math.abs(motion.config.penAxis[i] - PEN[i] / len) < 0.02, 'pen axis ' + motion.config.penAxis);
+  }
+  // Straight down the middle stays in the middle across: no slant.
+  let at = penScript(motion, pen, [{ right: 15, up: 9, hold: 0.1 }]);
+  assert.ok(Math.abs(at.x) < 0.03 && Math.abs(at.y) < 0.03, 'middle ' + JSON.stringify(at));
+  at = penScript(motion, pen, [{ up: -7, hold: 0.1 }]);
+  assert.ok(Math.abs(at.x) < 0.03 && at.y > 0.6, 'straight down ' + JSON.stringify(at));
+});
+
 test('corner calibration refuses corners tapped without moving, and Enter also captures', function () {
   const pen = heldPen(0);
   const motion = createMotion({ calibrationMs: 0, penAxis: PEN, pointerSmoothing: 0 });

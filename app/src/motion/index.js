@@ -189,7 +189,10 @@ export function createMotion(overrides) {
   // Corner calibration: degrees added to "right" so the mapping's frame lines up after yaw
   // drift or a reset, the recent pointing for picking a corner, and the calibration in progress.
   let rightShift = 0;
+  // Raw readings from the last few samples: { yaw, up, turn }, where turn is the gyro summed
+  // since pointer mode started, in sensor axes. Corner calibration picks from these.
   let recentPointing = [];
+  let turnSum = [0, 0, 0];
   let corners = null;
   let wasPenDown = false;
   const filterPointX = createOneEuro();
@@ -265,6 +268,11 @@ export function createMotion(overrides) {
 
   function pointerUpdate(rate, dt, penDown) {
     yaw += dot(rate, up) * dt;
+    turnSum = [turnSum[0] + rate[0] * dt, turnSum[1] + rate[1] * dt, turnSum[2] + rate[2] * dt];
+    recentPointing.push({ yaw: yaw, up: up, turn: turnSum });
+    if (recentPointing.length > CORNER_LOOKBACK + CORNER_AVERAGE) {
+      recentPointing.shift();
+    }
     const now = pointing();
     // Degrees right of and above the reference the yaw started from.
     let right = -now.yaw * config.horizontalSign;
@@ -273,10 +281,6 @@ export function createMotion(overrides) {
       const minCutoff = smoothingToCutoff(config.pointerSmoothing);
       right = filterPointX.filter(right, dt, minCutoff, config.pointerBeta);
       above = filterPointY.filter(above, dt, minCutoff, config.pointerBeta);
-    }
-    recentPointing.push([right, above]);
-    if (recentPointing.length > CORNER_LOOKBACK + CORNER_AVERAGE) {
-      recentPointing.shift();
     }
 
     if (corners !== null) {
@@ -337,21 +341,55 @@ export function createMotion(overrides) {
       return;
     }
     const beforeTap = recentPointing.slice(0, Math.max(CORNER_AVERAGE, recentPointing.length - CORNER_LOOKBACK)).slice(-CORNER_AVERAGE);
-    const angle = [0, 1].map((i) => beforeTap.reduce((sum, p) => sum + p[i], 0) / beforeTap.length);
-    corners.angles.push(angle);
+    const upSum = [0, 1, 2].map((i) => beforeTap.reduce((sum, p) => sum + p.up[i], 0));
+    corners.angles.push({
+      yaw: beforeTap.reduce((sum, p) => sum + p.yaw, 0) / beforeTap.length,
+      up: unitOrNull(upSum),
+      turn: beforeTap[beforeTap.length - 1].turn,
+    });
     if (corners.angles.length < 4) {
       corners.onProgress({ step: 'corner', index: corners.angles.length });
       return;
     }
-    const result = mappingFromCorners(corners.angles.map(([r, a]) => [r - rightShift, a]));
+    const readings = corners.angles;
     const onProgress = corners.onProgress;
     corners = null;
+
+    // Top left to top right was a move right, and top right to bottom right a move down: the
+    // same two motions the axis wizard measures. So they also give the left-right sign and the
+    // way the pen points, and remounting the sensor needs nothing more than this calibration.
+    let sign = config.horizontalSign;
+    let penAxis = config.penAxis;
+    const moveRight = readings[1].turn.map((n, i) => n - readings[0].turn[i]);
+    const moveDown = readings[2].turn.map((n, i) => n - readings[1].turn[i]);
+    const learned = Math.hypot(...moveRight) >= MIN_TILT_DEG && Math.hypot(...moveDown) >= MIN_TILT_DEG;
+    if (learned) {
+      sign = dot(moveRight, readings[0].up) <= 0 ? 1 : -1;
+      // Up halfway down the right edge, where the pen is about level, so the pen's own tilt
+      // at the top doesn't skew its direction.
+      const levelUp = unitOrNull(readings[1].up.map((n, i) => n + readings[2].up[i]));
+      const pointing = cross(normalize(moveDown), levelUp);
+      if (Math.hypot(pointing[0], pointing[1], pointing[2]) >= MIN_SIDEWAYS) {
+        penAxis = normalize(pointing);
+      }
+    }
+    const axis = unitOrNull(penAxis);
+    const angles = readings.map(function (r) {
+      const lift = Math.max(-1, Math.min(1, dot(axis, r.up)));
+      return [-r.yaw * sign, (Math.asin(lift) * 180) / Math.PI];
+    });
+    const result = mappingFromCorners(angles);
     if (result.mapping === null) {
       onProgress({ step: 'failed', reason: result.reason });
       return;
     }
     config.screenMapping = result.mapping;
-    onProgress({ step: 'done' });
+    config.horizontalSign = sign;
+    config.penAxis = penAxis;
+    rightShift = 0;
+    filterPointX.reset();
+    filterPointY.reset();
+    onProgress({ step: 'done', learnedPenAxis: learned });
   }
 
   function clearScreenMapping() {
@@ -548,6 +586,7 @@ export function createMotion(overrides) {
     center = null;
     lastPointer = null;
     recentPointing = [];
+    turnSum = [0, 0, 0];
     filterPointX.reset();
     filterPointY.reset();
     movedDuringCalibration = false;
