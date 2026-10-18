@@ -258,7 +258,7 @@ function startCornerCalibration() {
     } else if (message.step === 'draw') {
       // Write is on: two lines, drawn the way you write, so writing comes out upright.
       cornerTitle.textContent = message.which === 'right' ? 'Now write a line across, left to right' : 'Now write a line down, top to bottom';
-      cornerText.textContent = (message.retry ? message.retry + '. ' : '') + 'Hold the pad and draw it the way you write, about a letter or two long. Esc skips this.';
+      cornerText.textContent = (message.retry ? message.retry + '. ' : '') + 'Hold the pad and draw it the way you write, about a letter tall. This straightens the lean of your writing. Esc skips this.';
       cornerDots.forEach(function (dot) {
         dot.classList.add('done');
         dot.classList.remove('current');
@@ -903,7 +903,7 @@ const toolbar = createToolbar({
   onWritingChange: function (isOn) {
     setWriting(isOn);
     saveSetting(WRITING_KEY, isOn ? 'on' : 'off');
-    toolbar.setStatus(isOn ? 'Write on: steadier, smaller handwriting. Turn on Clean up to have words typed' : 'Write off');
+    toolbar.setStatus(isOn ? 'Write on: turn the pen to write, flick with the pen up to reset your wrist, double tap to jump to where you point' : 'Write off');
   },
 
   onAutoCleanUpChange: function (isOn) {

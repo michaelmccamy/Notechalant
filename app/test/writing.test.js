@@ -112,23 +112,27 @@ test('writing mode: strokes draw at the writing gain, slow drift barely moves th
   assert.ok(Math.abs(feed(off, offState, 0.4, -25, 1).x - 0.5) < 0.01, 'off: the plain pointer');
 });
 
-test('writing mode: after lifting, the cursor stays put until the pen moves, then catches up', function () {
+test('writing mode works like a mouse: slow moves carry on, a quick flick resets the hand, a double tap jumps to the pen', function () {
+  const gain = DEFAULT_CONFIG.writingGain;
   const motion = writingMotion();
   const state = { t: 0 };
   feed(motion, state, 0.2, 0, 0);
   const letter = feed(motion, state, 0.4, -25, 1);
-  // Holding still with the pen up: no sliding on its own.
-  const held = feed(motion, state, 2, 0, 0);
-  assert.ok(Math.abs(held.x - letter.x) < 0.005, 'stays put: ' + letter.x + ' to ' + held.x);
-  // Moving on to the next letter slowly (2 degrees at 10 deg/s) is scaled like the letter.
+  // Holding still with the pen up: nothing moves.
+  const held = feed(motion, state, 1, 0, 0);
+  assert.ok(Math.abs(held.x - letter.x) < 1e-9, 'stays put');
+  // On to the next letter slowly (2 degrees at 10 deg/s): moves like writing.
   const next = feed(motion, state, 0.2, -10, 0);
-  assert.ok(Math.abs(next.x - held.x - 0.1 * DEFAULT_CONFIG.writingGain) < 0.005, 'gap at writing scale: ' + (next.x - held.x));
-  // A fast 5 degree jump to a new spot catches up with where the pen points (x = 0.75).
-  const moved = feed(motion, state, 0.2, -25, 0);
-  const rested = feed(motion, state, 0.3, 0, 0);
-  assert.ok(moved.x > next.x + 0.25, 'the jump goes further than the pointer, to catch up');
-  assert.ok(Math.abs(rested.x - 0.85) < 0.03, 'caught up with the pen, 17 degrees right: ' + rested.x);
+  assert.ok(Math.abs(next.x - held.x - 0.1 * gain) < 0.005, 'next letter: ' + (next.x - held.x));
+  // The wrist runs out of room: a quick 20 degree flick back left with the pen up. No move.
+  const flicked = feed(motion, state, 0.25, 80, 0);
+  feed(motion, state, 0.3, 0, 0);
+  assert.ok(Math.abs(flicked.x - next.x) < 0.005, 'the flick is ignored: ' + (flicked.x - next.x));
+  // Writing carries on from the same spot, though the pen now points 20 degrees further left.
+  const more = feed(motion, state, 0.4, -25, 1);
+  assert.ok(Math.abs(more.x - next.x - 0.5 * gain) < 0.02, 'carries on: ' + (more.x - next.x));
+  // A double tap (recenter) puts the cursor where the pen points: recentered, the middle.
   motion.recenter();
   const centered = feed(motion, state, 0.1, 0, 0);
-  assert.ok(Math.abs(centered.x) < 1e-6, 'recenter clears the offset');
+  assert.ok(Math.abs(centered.x) < 1e-6, 'jumps to the pen: ' + centered.x);
 });

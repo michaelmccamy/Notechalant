@@ -17,18 +17,25 @@
 //   Relative. Turning speed moves the cursor, like a mouse. The rest of this comment is about it.
 //
 // Writing mode (writingMode, the toolbar's Write toggle) works in both. While the pen is down,
-// movement is scaled by precisionGain (ink/writing.js): writingGain at writing speed, less for
-// the slow drift of a shaky hand. In pointer mode that leaves the ink offset from where the pen
-// points. With the pen up, slow moves (on to the next letter) are scaled by writingGain too, so
-// the gaps match the letters. A fast move (a jump to a new row or spot) catches the cursor up
-// with where the pen points. The cursor never slides on its own while you hold still. The lazy
-// brush and the curve fit happen in the ink canvas.
+// movement is scaled by writingGain (and precisionGain in ink/writing.js, if writingCurve is
+// set). The lazy brush and the curve fit happen in the ink canvas.
 //
-// Writing slant: writing a stroke turns the hand differently from pointing, so with the pen held
-// down at a desk, down strokes leaned 28 degrees and lines across rose 10 (debug recording
-// 23-45-45), even after corner calibration. With Write on, corner calibration ends by asking for
-// one line across and one line down, drawn the way you write, and writingCorrection (a 2 x 2
-// matrix) turns those two into exactly right and exactly down for all writing after that.
+// In pointer mode, Write works like a mouse rather than a laser pointer: the ink moves by how
+// much the pen turns, not to where it points. Writing along a line in pointer mode meant
+// twisting the wrist further and further, which changed how the hand wrote (and the slant) as
+// it went. Now the hand stays in one comfortable place:
+//   slow moves with the pen up (on to the next letter or line) move the cursor the same way,
+//   a quick flick with the pen up (faster than WRITING_CLUTCH_DPS) doesn't move it at all, like
+//     lifting a mouse, so the wrist can reset when it runs out of room,
+//   recenter (a double tap) puts the cursor where the pen points again.
+// Turning is turned into page units with the corner calibration's scale at the middle of the
+// page, so the same turn draws the same size anywhere.
+//
+// Writing slant: down strokes lean, by 10 to 28 degrees on the real pen depending on the
+// posture. With Write on, corner calibration ends by asking for one line down, drawn the way
+// you write, and writingCorrection (a 2 x 2 matrix) shears writing so that line is upright.
+// Only the lean is corrected: lines across are kept level by eye, and a calibration line across
+// once rose 24 degrees where the writing rose 9, which tilted everything.
 //
 // Screen directions in relative mode, two ways:
 //   Roll compensation (default). The accelerometer gives "up" (gravity), tracked as the pen
@@ -191,19 +198,17 @@ function cross(a, b) {
 const CORNER_LOOKBACK = 10;
 const CORNER_AVERAGE = 6;
 
-// Writing mode in pointer mode. The precision curve sees the turning speed smoothed at this
-// cutoff, so a letter slowing down round a curve isn't shrunk there, while tremor (8 to 12 Hz)
-// is averaged away. With the pen up, moving faster than WRITING_TRAVEL_DPS is a jump: on the
-// real pen, moving on to the next letter peaked at 6 to 14 deg/s and jumping to a new row at 23
-// to 56. During a jump the offset shrinks by e for every WRITING_RETURN_DEG the pen turns.
+// Writing mode in pointer mode. The speed is smoothed at this cutoff, so a letter slowing down
+// round a curve isn't treated as slow, while tremor (8 to 12 Hz) is averaged away. With the pen
+// up, turning faster than WRITING_CLUTCH_DPS doesn't move the cursor: on the real pen, moving on
+// to the next letter peaked at 6 to 14 deg/s (once 27), and quick moves reached 23 to 56.
 const WRITING_SPEED_CUTOFF_HZ = 4;
-const WRITING_TRAVEL_DPS = 20;
-const WRITING_RETURN_DEG = 1.5;
+const WRITING_CLUTCH_DPS = 30;
 // Writing calibration: a line shorter than this (page units, the page is 2 across) is a tap, and
-// lines further than this from level or upright are refused rather than learned, so one bad
-// line can't warp everything.
+// a line leaning more than this is refused rather than learned, so one bad line can't warp
+// everything.
 const WRITING_MIN_LINE = 0.06;
-const WRITING_MAX_SKEW_DEG = 45;
+const WRITING_MAX_LEAN_DEG = 40;
 // With corners set, pointing past the edge of the calibrated area runs off towards infinity (and
 // beyond the horizon of a desk, back round the other side). The cursor stays within this.
 const POINTER_LIMIT = 1.5;
@@ -236,17 +241,18 @@ export function createMotion(overrides) {
   let recentPointing = [];
   let turnSum = [0, 0, 0];
   let corners = null;
-  // Writing calibration in progress: { which: 'right' or 'down', armed, start, last, right, ... }.
+  // Writing calibration in progress: { armed, start, last, learnedPenAxis, onProgress }.
   let writingCal = null;
   let wasPenDown = false;
   const filterPointX = createOneEuro();
   const filterPointY = createOneEuro();
-  // Writing mode in pointer mode: where the ink is, minus where the pen points, in page units
-  // (-1 to 1), plus the last pointing angles and the time since the pen lifted.
-  let writeOffset = { x: 0, y: 0 };
-  let lastWriteTarget = null;
+  // Writing mode in pointer mode: where the ink goes in page units (-1 to 1), or null to start
+  // where the pen points, plus the last pointing angles and their smoothed speed.
+  let writePos = null;
   let lastWriteAngles = null;
   let writeVelocity = [0, 0];
+  // Page units per degree of turn at the middle of the page, for the mapping it was worked out from.
+  let scaleCache = { mapping: undefined, scale: null };
 
   function calibrate(sample) {
     if (calibrationStartT === null) {
@@ -318,47 +324,65 @@ export function createMotion(overrides) {
   }
 
   function clearWriting() {
-    writeOffset = { x: 0, y: 0 };
-    lastWriteTarget = null;
+    writePos = null;
     lastWriteAngles = null;
     writeVelocity = [0, 0];
   }
 
-  // Shifts the pointer spot (x, y) by the writing offset, updated for this sample.
+  // [a, b, c, d]: page x = a * right + b * above, page y = c * right + d * above, for small
+  // turns (degrees) around the middle of the page.
+  function pageScale() {
+    const mapping = config.screenMapping;
+    if (mapping === null) {
+      return [1 / config.pointerRangeXDeg, 0, 0, -1 / config.pointerRangeYDeg];
+    }
+    if (scaleCache.mapping !== mapping) {
+      const middle = applyHomography(invertHomography(mapping), [0, 0]);
+      const [r0, a0] = fromPlane(middle[0], middle[1]);
+      const at = (r, a) => applyHomography(mapping, toPlane(r, a));
+      const e = 0.5;
+      const [px, mx, py, my] = [at(r0 + e, a0), at(r0 - e, a0), at(r0, a0 + e), at(r0, a0 - e)];
+      scaleCache = { mapping: mapping, scale: [(px[0] - mx[0]) / (2 * e), (py[0] - my[0]) / (2 * e), (px[1] - mx[1]) / (2 * e), (py[1] - my[1]) / (2 * e)] };
+    }
+    return scaleCache.scale;
+  }
+
+  // A turn in degrees, [right, above], in page units.
+  function turnToPage(turn) {
+    const s = pageScale();
+    return [s[0] * turn[0] + s[1] * turn[1], s[2] * turn[0] + s[3] * turn[1]];
+  }
+
+  // Writing mode: where the ink goes, moved by this sample's turn. (x, y) is where the pen
+  // points, used to start from.
   function applyWriting(x, y, right, above, dt, penDown) {
     if (!config.writingMode) {
       clearWriting();
       return [x, y];
     }
-    const previous = lastWriteTarget || { x: x, y: y };
-    const previousAngles = lastWriteAngles || { right: right, above: above };
-    lastWriteTarget = { x: x, y: y };
-    lastWriteAngles = { right: right, above: above };
-    const k = lowPassAlpha(WRITING_SPEED_CUTOFF_HZ, dt);
-    writeVelocity = [
-      writeVelocity[0] + k * ((right - previousAngles.right) / dt - writeVelocity[0]),
-      writeVelocity[1] + k * ((above - previousAngles.above) / dt - writeVelocity[1]),
-    ];
-    const speed = Math.hypot(writeVelocity[0], writeVelocity[1]);
-    if (penDown !== true && speed > WRITING_TRAVEL_DPS) {
-      // The smaller of this sample's turn and the smoothed speed: the smoothed one lingers for a
-      // moment after the hand stops, and the cursor would slide on its own then.
-      const turned = Math.hypot(right - previousAngles.right, above - previousAngles.above);
-      const keep = Math.exp(-Math.min(turned, speed * dt) / WRITING_RETURN_DEG);
-      writeOffset.x *= keep;
-      writeOffset.y *= keep;
-      return [x + writeOffset.x, y + writeOffset.y];
+    if (writePos === null) {
+      writePos = { x: x, y: y };
     }
-    // The pen moved (dx, dy). The ink moves that, straightened and scaled by the gain, so the
-    // offset takes the difference.
+    const previous = lastWriteAngles || { right: right, above: above };
+    lastWriteAngles = { right: right, above: above };
+    const turn = [right - previous.right, above - previous.above];
+    const k = lowPassAlpha(WRITING_SPEED_CUTOFF_HZ, dt);
+    writeVelocity = [writeVelocity[0] + k * (turn[0] / dt - writeVelocity[0]), writeVelocity[1] + k * (turn[1] / dt - writeVelocity[1])];
+    const speed = Math.hypot(writeVelocity[0], writeVelocity[1]);
+    // The faster of this sample's turn and the smoothed speed, so a flick is caught from its
+    // first sample instead of slipping through while the smoothed speed catches up.
+    if (penDown !== true && Math.max(speed, Math.hypot(turn[0], turn[1]) / dt) > WRITING_CLUTCH_DPS) {
+      return [writePos.x, writePos.y];
+    }
     const gain = penDown === true ? precisionGain(speed, config) : config.writingGain;
-    const dx = x - previous.x;
-    const dy = y - previous.y;
+    const [dx, dy] = turnToPage(turn);
     // Pen up too, so the whole space is one consistent mapping the hand can get used to.
     const c = config.writingCorrection || [1, 0, 0, 1];
-    writeOffset.x += gain * (c[0] * dx + c[1] * dy) - dx;
-    writeOffset.y += gain * (c[2] * dx + c[3] * dy) - dy;
-    return [x + writeOffset.x, y + writeOffset.y];
+    writePos = {
+      x: Math.max(-1, Math.min(1, writePos.x + gain * (c[0] * dx + c[1] * dy))),
+      y: Math.max(-1, Math.min(1, writePos.y + gain * (c[2] * dx + c[3] * dy))),
+    };
+    return [writePos.x, writePos.y];
   }
 
   function pointerUpdate(rate, dt, penDown) {
@@ -408,7 +432,7 @@ export function createMotion(overrides) {
     x = Number.isFinite(x) ? Math.max(-POINTER_LIMIT, Math.min(POINTER_LIMIT, x)) : 0;
     y = Number.isFinite(y) ? Math.max(-POINTER_LIMIT, Math.min(POINTER_LIMIT, y)) : 0;
     if (writingCal !== null) {
-      writingCalStep(x, y, penDown === true);
+      writingCalStep(right, above, penDown === true);
       return { dx: 0, dy: 0, ready: false };
     }
     [x, y] = applyWriting(x, y, right, above, dt, penDown);
@@ -498,8 +522,8 @@ export function createMotion(overrides) {
     filterPointY.reset();
     if (config.writingMode) {
       // The pad is still down from the last corner's tap, so a line only starts after it lifts.
-      writingCal = { which: 'right', armed: false, start: null, last: null, right: null, learnedPenAxis: learned, onProgress: onProgress };
-      onProgress({ step: 'draw', which: 'right' });
+      writingCal = { armed: false, start: null, last: null, learnedPenAxis: learned, onProgress: onProgress };
+      onProgress({ step: 'draw', which: 'down' });
       return;
     }
     onProgress({ step: 'done', learnedPenAxis: learned });
@@ -507,26 +531,20 @@ export function createMotion(overrides) {
 
   // ---- Writing calibration (the end of corner calibration, with Write on) ----
   //
-  // Measures one line across and one line down, from where the pen pressed to where it lifted,
-  // in page units. onProgress gets { step: 'draw', which, retry } for each, then { step: 'done',
-  // writing: true, 'skipped', or 'failed', reason }.
-  function writingCalStep(x, y, penDown) {
+  // Measures one line down, from where the pen pressed to where it lifted. onProgress gets
+  // { step: 'draw', which: 'down', retry }, then { step: 'done', writing: true, 'skipped', or
+  // 'failed', reason }.
+  function writingCalStep(right, above, penDown) {
     const cal = writingCal;
     if (!penDown) {
       if (cal.start !== null) {
-        const line = [cal.last.x - cal.start.x, cal.last.y - cal.start.y];
+        const line = turnToPage([cal.last.right - cal.start.right, cal.last.above - cal.start.above]);
         cal.start = null;
         if (Math.hypot(line[0], line[1]) < WRITING_MIN_LINE) {
-          cal.onProgress({ step: 'draw', which: cal.which, retry: 'That was too short. Draw a longer line' });
+          cal.onProgress({ step: 'draw', which: 'down', retry: 'That was too short. Draw a longer line' });
           return;
         }
-        if (cal.which === 'right') {
-          cal.right = line;
-          cal.which = 'down';
-          cal.onProgress({ step: 'draw', which: 'down' });
-          return;
-        }
-        finishWritingCal(learnWritingCorrection(cal.right, line));
+        finishWritingCal(learnWritingCorrection(line));
         return;
       }
       cal.armed = true;
@@ -536,9 +554,9 @@ export function createMotion(overrides) {
       return;
     }
     if (cal.start === null) {
-      cal.start = { x: x, y: y };
+      cal.start = { right: right, above: above };
     }
-    cal.last = { x: x, y: y };
+    cal.last = { right: right, above: above };
   }
 
   function finishWritingCal(result) {
@@ -787,23 +805,19 @@ export function createMotion(overrides) {
   };
 }
 
-// The writing correction from a line across and a line down (each [dx, dy] in page units, y
-// down): the 2 x 2 matrix taking the first to exactly right and the second to exactly down,
-// keeping their lengths. Returns { writing: true, correction } or { writing: 'failed', reason }.
-export function learnWritingCorrection(across, down) {
-  const r = [across[0] / Math.hypot(across[0], across[1]), across[1] / Math.hypot(across[0], across[1])];
-  const d = [down[0] / Math.hypot(down[0], down[1]), down[1] / Math.hypot(down[0], down[1])];
-  const acrossTilt = (Math.abs(Math.atan2(r[1], r[0])) * 180) / Math.PI;
-  const downTilt = (Math.abs(Math.atan2(d[0], d[1])) * 180) / Math.PI;
-  if (r[0] <= 0 || acrossTilt > WRITING_MAX_SKEW_DEG) {
-    return { writing: 'failed', reason: 'The line across went too far up or down. Run K again and draw it left to right' };
+// The writing correction from a line down ([dx, dy] in page units, y down): a shear that makes
+// it upright and leaves up and down, and lines across, as they were. Returns { writing: true,
+// correction, leanDeg } or { writing: 'failed', reason }.
+export function learnWritingCorrection(down) {
+  const [dx, dy] = down;
+  if (dy <= 0) {
+    return { writing: 'failed', reason: 'The line went up instead of down. Run K again and draw it top to bottom' };
   }
-  if (d[1] <= 0 || downTilt > WRITING_MAX_SKEW_DEG) {
-    return { writing: 'failed', reason: 'The line down leaned too far. Run K again and draw it top to bottom' };
+  const leanDeg = (Math.atan2(dx, dy) * 180) / Math.PI;
+  if (Math.abs(leanDeg) > WRITING_MAX_LEAN_DEG) {
+    return { writing: 'failed', reason: 'The line leaned too far to be a line down. Run K again and draw it top to bottom' };
   }
-  // The inverse of the matrix with r and d as its columns.
-  const det = r[0] * d[1] - d[0] * r[1];
-  return { writing: true, correction: [d[1] / det, -d[0] / det, -r[1] / det, r[0] / det] };
+  return { writing: true, correction: [1, -dx / dy, 0, 1], leanDeg: leanDeg };
 }
 
 // Turns stored or pasted settings into a safe config: unknown keys are dropped, and values

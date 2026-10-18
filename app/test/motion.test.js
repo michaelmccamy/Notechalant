@@ -552,7 +552,7 @@ test('sanitizeConfig keeps good saved values and drops bad ones', function () {
   assert.equal(sanitizeConfig({ rollCompensation: false }).rollCompensation, false);
 });
 
-test('with Write on, corner calibration ends with a line across and a line down, and writing comes out upright', function () {
+test('with Write on, corner calibration ends with a line down, and writing comes out upright', function () {
   const pen = heldPen(0);
   const motion = createMotion({ calibrationMs: 0, penAxis: PEN, pointerSmoothing: 0, writingMode: true, writingGain: 1, writingCurve: 0 });
   penScript(motion, pen, [{ hold: 0.3 }]);
@@ -568,32 +568,36 @@ test('with Write on, corner calibration ends with a line across and a line down,
     { up: -18, hold: 0.3, tap: true },
     { right: -30, hold: 0.3, tap: true },
   ]);
-  assert.equal(motion.config.writingCorrection, null, 'not until the two lines are drawn');
-  // A tap is too short to be a line. Then this hand's lines: across rises, down leans left.
-  const during = penScript(motion, pen, [{ right: 15, up: 9, hold: 0.2, tap: true }, { right: 4, up: 0.7, press: true }]);
+  assert.equal(motion.config.writingCorrection, null, 'not until the line is drawn');
+  // A tap is too short to be a line. Then this hand's line down, leaning left.
+  const during = penScript(motion, pen, [{ right: 15, up: 9, hold: 0.2, tap: true }]);
   assert.equal(during.ready, false, 'nothing draws while calibrating');
-  penScript(motion, pen, [{ hold: 0.2 }, { right: -1.5, up: -3, press: true }]);
-  assert.deepEqual(steps, ['corner 0', 'corner 1', 'corner 2', 'corner 3', 'draw right', 'draw right again', 'draw down', 'done']);
+  penScript(motion, pen, [{ right: -1.5, up: -3, press: true }]);
+  assert.deepEqual(steps, ['corner 0', 'corner 1', 'corner 2', 'corner 3', 'draw down', 'draw down again', 'done']);
   assert.equal(done.writing, true);
 
-  // Writing the same leaning down stroke now goes straight down.
-  const before = penScript(motion, pen, [{ hold: 0.2 }]);
-  const after = penScript(motion, pen, [{ right: -1.5, up: -3, press: true }]);
-  const dx = after.x - before.x;
-  const dy = after.y - before.y;
+  // Writing the same leaning down stroke now goes straight down, and across stays across.
+  let before = penScript(motion, pen, [{ hold: 0.2 }]);
+  let after = penScript(motion, pen, [{ right: -1.5, up: -3, press: true }]);
+  let dx = after.x - before.x;
+  let dy = after.y - before.y;
   assert.ok(dy > 0.1 && Math.abs(dx / dy) < 0.05, 'straight down: ' + dx.toFixed(3) + ', ' + dy.toFixed(3));
+  before = penScript(motion, pen, [{ hold: 0.2 }]);
+  after = penScript(motion, pen, [{ right: 3, press: true }]);
+  dx = after.x - before.x;
+  dy = after.y - before.y;
+  assert.ok(dx > 0.1 && Math.abs(dy / dx) < 0.05, 'across: ' + dx.toFixed(3) + ', ' + dy.toFixed(3));
 });
 
-test('the writing correction is refused for lines far from level or upright, and Esc keeps the corners', function () {
-  // The lines from the desk recording: across rises 10 degrees, down leans 28.
-  const fix = learnWritingCorrection([0.98, -0.17], [-0.43, 0.9]);
+test('the writing correction is refused for a line far from upright, and Esc keeps the corners', function () {
+  // The desk recording's line down, leaning 28 degrees left: sheared upright, height kept.
+  const fix = learnWritingCorrection([-0.43, 0.9]);
   assert.equal(fix.writing, true);
   const [a, b, c, d] = fix.correction;
-  assert.ok(Math.abs(c * 0.98 + d * -0.17) < 1e-9 && a * 0.98 + b * -0.17 > 0, 'across becomes level');
-  assert.ok(Math.abs(a * -0.43 + b * 0.9) < 1e-9 && c * -0.43 + d * 0.9 > 0, 'down becomes upright');
-  assert.equal(learnWritingCorrection([1, -1.2], [0, 1]).writing, 'failed', 'across at 50 degrees');
-  assert.equal(learnWritingCorrection([1, 0], [-1, 0.8]).writing, 'failed', 'down leaning 51 degrees');
-  assert.equal(learnWritingCorrection([-1, 0], [0, 1]).writing, 'failed', 'drawn right to left');
+  assert.ok(Math.abs(a * -0.43 + b * 0.9) < 1e-9 && Math.abs(c * -0.43 + d * 0.9 - 0.9) < 1e-9, 'upright, same height');
+  assert.deepEqual([a, c], [1, 0], 'lines across untouched');
+  assert.equal(learnWritingCorrection([-1, 0.8]).writing, 'failed', 'leaning 51 degrees');
+  assert.equal(learnWritingCorrection([0, -1]).writing, 'failed', 'drawn bottom to top');
 
   const pen = heldPen(0);
   const motion = createMotion({ calibrationMs: 0, penAxis: PEN, pointerSmoothing: 0, writingMode: true });
