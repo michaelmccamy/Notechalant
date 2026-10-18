@@ -34,7 +34,7 @@ Built at SwampHacks XII, for about $25 in parts.
 - Write on the whiteboard, or open a folder or file: PDF, Word, PowerPoint, Excel, text, Markdown, CSV, JSON, and images. Your files are never changed. Ink is saved next to them in a `.notechalant/` folder.
 - **Save copy** makes a new file with your ink on it: the PDF with vector ink, an image in the same format, or a PDF of the pages for everything else.
 - The **Notes** panel holds the typed-up text for each file, in page order. Click a note to edit it. **Copy**, **Export .md**, and **Clear** are at the top.
-- **Present mode** (**P**) hides everything but the page. The IR remote can change colors, sizes, pages, and tabs, and toggle present mode.
+- **Present mode** (**P**) hides everything but the page. The IR remote works as a clicker: it changes colors, sizes, pages, and tabs, toggles present mode, and its buttons 1 to 7 switch Clean up, Ask, Tutor, and Auto, answer the tutor's quick questions, and run calibration (see `firmware/remote/README.md`).
 
 ## Hardware
 
