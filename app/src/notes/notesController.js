@@ -7,6 +7,8 @@ import {
   notesForExistingInk,
   untranscribed,
   markTranscribed,
+  strokesBox,
+  lineBlocks,
   addBlock,
   editBlock,
   removeBlock,
@@ -24,6 +26,8 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
   let auto = true;
   // The tab a request is in flight for, or null.
   let busy = null;
+  // The note being read again for its line, shown pulsing in place of a new placeholder.
+  let busyBlockId = null;
   let failedKey = null;
 
   const panel = createNotesPanel({
@@ -66,7 +70,7 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
   }
 
   function show(tab) {
-    panel.setPending(busy === tab);
+    panel.setPending(busy === tab, busy === tab ? busyBlockId : null);
     panel.render(tab, tab.page);
   }
 
@@ -110,22 +114,37 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     run(tab, tab.page);
   }
 
+  // Sends the page's new strokes. If they continue a line that already has a note, that line's
+  // strokes go along with them and the note is rewritten, so a line read in pieces ends up whole.
   async function run(tab, page) {
     const strokes = tab.ink[page] || [];
     const fresh = untranscribed(tab.notes, page, strokes);
     const sentCount = strokes.length;
     const key = attemptKey(tab, page, sentCount);
+    const freshIndexes = fresh.map((_, i) => sentCount - fresh.length + i);
+    const lines = lineBlocks(tab.notes, page, strokesBox(fresh));
+    const indexes = Array.from(new Set(lines.flatMap((block) => block.strokes).concat(freshIndexes))).sort((a, b) => a - b);
+    const sent = indexes.map((i) => strokes[i]);
 
     busy = tab;
+    busyBlockId = lines.length > 0 ? lines[0].id : null;
     onBusyChange(true);
     if (getActiveTab() === tab) {
-      panel.setPending(true);
+      panel.setPending(true, busyBlockId);
     }
-    onStatus('Transcribing…');
+    onStatus(lines.length > 0 ? 'Reading the whole line again…' : 'Transcribing…');
 
     let text;
     try {
-      text = await recognize(strokesToPng(fresh), contextTail(tab.notes, CONTEXT_CHARS));
+      text = await recognize(
+        strokesToPng(sent),
+        contextTail(
+          tab.notes,
+          CONTEXT_CHARS,
+          lines.map((block) => block.id),
+        ),
+        lines.map((block) => block.text).join('\n'),
+      );
     } catch (err) {
       failedKey = key;
       finish();
@@ -134,18 +153,38 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     }
 
     failedKey = null;
-    markTranscribed(tab.notes, page, sentCount, (tab.ink[page] || []).length);
-    const block = text ? addBlock(tab.notes, text, page) : null;
+    const strokesNow = (tab.ink[page] || []).length;
+    markTranscribed(tab.notes, page, sentCount, strokesNow);
+    const ink = { box: strokesBox(sent), strokes: indexes.filter((i) => i < strokesNow) };
+    // The line's notes may have been deleted or edited by hand while this was in flight.
+    const live = lines.filter((block) => tab.notes.blocks.includes(block) && !block.edited);
+    let block = null;
+    let status = 'No writing found, kept it as ink';
+    if (text && live.length > 0) {
+      block = live[0];
+      block.text = text;
+      block.box = ink.box;
+      block.strokes = ink.strokes;
+      // Writing that bridged two notes on the same line folds them into one.
+      for (const other of live.slice(1)) {
+        removeBlock(tab.notes, other.id);
+      }
+      status = 'Updated the note for this line';
+    } else if (text) {
+      block = addBlock(tab.notes, text, page, undefined, ink);
+      status = 'Added to notes';
+    }
     finish();
     await save(tab);
     if (getActiveTab() === tab) {
       panel.render(tab, tab.page, block ? block.id : null);
     }
-    onStatus(block ? 'Added to notes' : 'No writing found, kept it as ink');
+    onStatus(status);
   }
 
   function finish() {
     busy = null;
+    busyBlockId = null;
     onBusyChange(false);
     panel.setPending(false);
   }

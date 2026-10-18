@@ -3,12 +3,14 @@
 //
 // context is the end of the file's notes so far. The model uses it to read messy letters
 // (a word that continues a sentence, a variable name used earlier). It's optional.
+// previous is how part of this same handwriting was read before, when a line is read again
+// because more was written on it, so letters it already got right stay the same. Also optional.
 
-export async function recognizeImage(pngDataUrl, context) {
+export async function recognizeImage(pngDataUrl, context, previous) {
   const response = await fetch('/api/recognize', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image: pngDataUrl, context: context || '' }),
+    body: JSON.stringify({ image: pngDataUrl, context: context || '', previous: previous || '' }),
   });
 
   let body = null;
