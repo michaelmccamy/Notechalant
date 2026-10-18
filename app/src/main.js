@@ -50,8 +50,9 @@ const WHITEBOARD_KEY = 'notechalant.whiteboard';
 // Ink is saved this long after the last change, so a burst of writing becomes one save.
 const SAVE_DELAY_MS = 800;
 const TICK_MS = 250;
-// How long the pen has to stay still before new writing is typed up.
-const TRANSCRIBE_IDLE_MS = 2000;
+// How long the pen has to stay still before new writing is typed up. Gemini answers in about
+// a second, so this wait was most of the delay. Raise it if words get read half finished.
+const TRANSCRIBE_IDLE_MS = 1200;
 const AUTO_KEY = 'notechalant.autoTranscribe';
 const AUTO_CLEANUP_KEY = 'notechalant.autoCleanUp';
 const SNAP_KEY = 'notechalant.snapShapes';

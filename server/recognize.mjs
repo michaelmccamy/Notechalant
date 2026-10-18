@@ -40,6 +40,9 @@ const EXPLAIN_PROMPT = [
 // Giving up and asking again is much faster than waiting it out. Explanations are longer, so
 // they get more time.
 const TIMEOUT_MS = 8000;
+// Reading handwriting needs no reasoning, so transcription asks for the least thinking.
+// Explanations keep the model's default.
+const TRANSCRIBE_CONFIG = { thinkingConfig: { thinkingLevel: 'minimal' } };
 const EXPLAIN_TIMEOUT_MS = 20000;
 const ATTEMPTS = 2;
 
@@ -62,7 +65,7 @@ export async function recognize(body, env) {
 
   try {
     const context = typeof body.context === 'string' ? body.context.slice(-MAX_CONTEXT_CHARS).trim() : '';
-    const text = await callGemini(image.slice(PNG_PREFIX.length), buildPrompt(context), TIMEOUT_MS, env);
+    const text = await callGemini(image.slice(PNG_PREFIX.length), buildPrompt(context), TIMEOUT_MS, env, TRANSCRIBE_CONFIG);
     return { status: 200, body: { text: text || '(nothing recognized)' } };
   } catch (err) {
     console.error(err);
@@ -100,7 +103,7 @@ export function splitAbout(answer) {
   return { about: '', text: (answer || '').trim() };
 }
 
-async function callGemini(base64Png, prompt, timeoutMs, env) {
+async function callGemini(base64Png, prompt, timeoutMs, env, generationConfig) {
   const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + env.GEMINI_MODEL + ':generateContent';
   const request = {
     method: 'POST',
@@ -114,6 +117,7 @@ async function callGemini(base64Png, prompt, timeoutMs, env) {
           parts: [{ text: prompt }, { inline_data: { mime_type: 'image/png', data: base64Png } }],
         },
       ],
+      generationConfig: generationConfig,
     }),
   };
 
