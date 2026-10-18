@@ -49,6 +49,8 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     }
   });
   let pendingEl = null;
+  // A note being read again because its line got more writing. It pulses in place.
+  let updatingId = null;
   let shown = null;
   let tutorOn = false;
   // What's typed in each tutor card's box, by block id. The panel redraws whenever a note or an
@@ -84,6 +86,7 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     for (const block of blocks) {
       const el = renderBlock(block, multiPage);
       el.classList.toggle('on-page', multiPage && block.page === currentPage);
+      el.classList.toggle('updating', block.id === updatingId);
       if (block.id === highlightId) {
         el.classList.add('fresh');
       }
@@ -250,6 +253,7 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
   function renderBlock(block, multiPage) {
     const el = document.createElement('div');
     el.className = 'note-block' + (block.asked ? ' asked' : '');
+    el.dataset.id = block.id;
 
     if (multiPage) {
       const pageTag = document.createElement('button');
@@ -343,8 +347,20 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     });
   }
 
-  // A placeholder at the bottom while a transcription for the shown file is in flight.
-  function setPending(isPending) {
+  // While a transcription for the shown file is in flight: the note being redone pulses if there
+  // is one (blockId), otherwise a placeholder waits at the bottom.
+  function setPending(isPending, blockId) {
+    updatingId = isPending && blockId ? blockId : null;
+    for (const el of blocksEl.querySelectorAll('.note-block[data-id]')) {
+      el.classList.toggle('updating', el.dataset.id === updatingId);
+    }
+    if (updatingId !== null) {
+      const el = blocksEl.querySelector('.note-block.updating');
+      if (el) {
+        el.scrollIntoView({ block: 'nearest' });
+      }
+      return;
+    }
     if (isPending && pendingEl === null) {
       pendingEl = paragraph('note-block pending', 'Transcribing…');
       blocksEl.appendChild(pendingEl);
