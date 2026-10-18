@@ -238,10 +238,12 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     const png = strokesToPng(sent);
     let text;
     try {
+      // Only notes read from handwriting go along as context. Tutor questions and Ask answers
+      // aren't writing, and the model sometimes copied them back as if they were on the page.
       text = await recognize(
         png,
         contextTail(
-          tab.notes,
+          { blocks: tab.notes.blocks.filter((block) => block.box && !block.asked) },
           CONTEXT_CHARS,
           lines.map((block) => block.id),
         ),
@@ -259,8 +261,10 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     // Clean up needs the strokes read to be one unbroken run at the end, which they are unless
     // a line was read again together with older strokes further back.
     const contiguous = indexes.length > 0 && indexes[indexes.length - 1] - indexes[0] === indexes.length - 1 && indexes[indexes.length - 1] === sentCount - 1;
+    // Lines and circles only snap. With tutor mode on they're read too, but never become text.
+    const onlyMarks = isJustMarks(fresh.filter((item) => item.type !== 'text'));
     const cleaned =
-      text !== '' && contiguous && (manual || autoCleanUp) && cleanUp(tab, page, indexes[0], sentCount, strokesSignature(sent), text);
+      text !== '' && contiguous && !onlyMarks && (manual || autoCleanUp) && cleanUp(tab, page, indexes[0], sentCount, strokesSignature(sent), text);
     if (cleaned) {
       markCleanedUp(tab.notes, page, indexes[0]);
     } else {
