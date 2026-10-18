@@ -250,7 +250,7 @@ function startCornerCalibration() {
     cornerGuide.hidden = !calibratingCorners;
     if (message.step === 'corner') {
       cornerTitle.textContent = 'Point at the ' + CORNER_NAMES[message.index] + ' corner';
-      cornerText.textContent = 'Then tap the pad, or press Enter. Esc cancels.';
+      cornerText.textContent = 'Keep your hand in one place and tilt the pen to aim. Then tap the pad, or press Enter. Esc cancels.';
       cornerDots.forEach(function (dot, i) {
         dot.classList.toggle('done', i < message.index);
         dot.classList.toggle('current', i === message.index);

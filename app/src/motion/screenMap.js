@@ -72,6 +72,14 @@ export function invertHomography(h) {
   ];
 }
 
+// A page smaller than this, in degrees of pen turn, makes the pen far too sensitive. Moving the
+// hand to reach a corner doesn't count (the sensor only feels turning), and one desk calibration
+// came out 21.5 by 3.7 degrees that way. Good ones were about 25 by 17 to 26.
+const MIN_WIDTH_DEG = 8;
+const MIN_HEIGHT_DEG = 6;
+// Wider than tall (or the reverse) by more than this is a squashed calibration, not a page.
+const MAX_SQUASH = 4;
+
 // The corners the user pointed at ([rightDeg, upDeg] each, in CORNERS order) as a mapping, or
 // null with a reason if they can't make one: too close together, or not in the right order.
 export function mappingFromCorners(cornerAngles) {
@@ -81,10 +89,23 @@ export function mappingFromCorners(cornerAngles) {
   if (!turnsClockwise(plane)) {
     return { mapping: null, reason: 'The corners came out in the wrong order or on top of each other. Try again' };
   }
-  const widthDeg = Math.abs(cornerAngles[1][0] - cornerAngles[0][0]);
-  const heightDeg = Math.abs(cornerAngles[0][1] - cornerAngles[3][1]);
-  if (widthDeg < 4 || heightDeg < 3) {
-    return { mapping: null, reason: 'The corners are too close together. Point right at each corner of the page' };
+  // Each side's size, averaged with the opposite side's.
+  const widthDeg = (Math.abs(cornerAngles[1][0] - cornerAngles[0][0]) + Math.abs(cornerAngles[2][0] - cornerAngles[3][0])) / 2;
+  const heightDeg = (Math.abs(cornerAngles[0][1] - cornerAngles[3][1]) + Math.abs(cornerAngles[1][1] - cornerAngles[2][1])) / 2;
+  if (widthDeg < MIN_WIDTH_DEG || heightDeg < MIN_HEIGHT_DEG) {
+    return {
+      mapping: null,
+      reason:
+        'The corners are too close together, so the pen would be far too sensitive. Keep your hand in one place and tilt the pen to aim at each corner',
+    };
+  }
+  if (widthDeg / heightDeg > MAX_SQUASH || heightDeg / widthDeg > MAX_SQUASH) {
+    return {
+      mapping: null,
+      reason:
+        (widthDeg > heightDeg ? 'Up and down' : 'Left and right') +
+        " came out much smaller than the other way, so it would be far too sensitive. Keep your hand in one place and tilt the pen to aim at each corner",
+    };
   }
   const h = computeHomography(plane, CORNERS);
   if (h === null) {

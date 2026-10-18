@@ -53,4 +53,13 @@ test('corners pointed at in the wrong order, or barely apart, are refused', func
   assert.equal(mappingFromCorners([good[0], good[0], good[0], good[0]]).mapping, null, 'all the same');
   const tiny = [[0, 0], [1, 0], [1, -1], [0, -1]];
   assert.match(mappingFromCorners(tiny).reason, /too close/);
+  // The desk calibration that felt far too sensitive: 21.5 degrees across but 3.7 tall, from
+  // reaching for the near and far corners with the hand instead of tilting the pen.
+  const squashed = [[22.8, 20.2], [42.0, 16.7], [42.8, 15.5], [19.5, 15.1]];
+  assert.equal(mappingFromCorners(squashed).mapping, null);
+  assert.match(mappingFromCorners(squashed).reason, /tilt the pen/);
+  // A long thin one that is big enough both ways is still squashed.
+  assert.match(mappingFromCorners([[-20, 4], [20, 4], [20, -4], [-20, -4]]).reason, /Up and down came out much smaller/);
+  // The good ones from earlier recordings pass.
+  assert.ok(mappingFromCorners([[-12.5, 8.5], [12.5, 8.5], [12.5, -8.5], [-12.5, -8.5]]).mapping !== null);
 });
