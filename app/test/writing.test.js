@@ -130,7 +130,7 @@ test('writing mode works like a mouse: slow moves go a little, fast moves go far
   const fast = feed(motion, state, 0.025, -80, 0);
   feed(motion, state, 0.2, 0, 0);
   const travelled = fast.x - before.x;
-  assert.ok(travelled > 3 * slow, 'fast: ' + travelled.toFixed(4) + ' slow: ' + slow.toFixed(4));
+  assert.ok(travelled > 2 * slow, 'fast: ' + travelled.toFixed(4) + ' slow: ' + slow.toFixed(4));
   // A double tap (recenter) puts the cursor where the pen points: recentered, the middle.
   motion.recenter();
   const centered = feed(motion, state, 0.1, 0, 0);

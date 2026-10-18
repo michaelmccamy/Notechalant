@@ -16,7 +16,7 @@ const TUNED_KEYS = ['screenMapping', 'pointerMode', 'pointerRangeXDeg', 'pointer
 const AXIS_NAMES = ['gx', 'gy', 'gz'];
 // Bumped when Writing mode's defaults change, so settings saved before then don't hide the new
 // defaults (they were saved along with everything else, not chosen).
-const WRITING_VERSION = 2;
+const WRITING_VERSION = 3;
 const WRITING_KEYS = ['writingString', 'writingGain', 'writingCurve'];
 
 export function loadMotionSettings() {

@@ -80,9 +80,11 @@ export const DEFAULT_CONFIG = {
   accelerationMidDps: 20, // writing speed on the real pen, where the gain is pixelsPerDegree
   // Multipliers on top while the pen is down (writing) and up (moving to a spot).
   drawingGain: 0.8,
-  travelGain: 1.3,
+  travelGain: 1,
   writingMode: false,
-  writingGain: 0.6, // writing mode: movement while drawing, as a share of pointer movement
+  // Writing mode: movement while drawing, as a share of pointer movement. 0.6 and 0.45 both drew
+  // letters bigger than wanted on the real pen.
+  writingGain: 0.35,
   // How much slower turning is shrunk, 0 is a plain gain. Off by default: on a recording of
   // "hello notes" any curve bent letters more than it steadied them.
   writingCurve: 0,
