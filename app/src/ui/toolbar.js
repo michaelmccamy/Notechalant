@@ -20,7 +20,6 @@ export function createToolbar(handlers) {
   const autoCleanUpInput = document.getElementById('auto-cleanup');
   const snapInput = document.getElementById('snap-shapes');
   const askInput = document.getElementById('ask-mode');
-  const writingInput = document.getElementById('writing-mode');
   const relayIndicators = document.getElementById('relay-indicators');
   const relayIndicator = document.getElementById('relay-indicator');
   const penIndicator = document.getElementById('pen-indicator');
@@ -116,10 +115,6 @@ export function createToolbar(handlers) {
   snapInput.addEventListener('change', function () {
     handlers.onSnapChange(snapInput.checked);
   });
-  writingInput.addEventListener('change', function () {
-    handlers.onWritingChange(writingInput.checked);
-    writingInput.blur();
-  });
   autoCleanUpInput.addEventListener('change', function () {
     handlers.onAutoCleanUpChange(autoCleanUpInput.checked);
   });
@@ -208,10 +203,6 @@ export function createToolbar(handlers) {
     snapInput.checked = isOn;
   }
 
-  function setWriting(isOn) {
-    writingInput.checked = isOn;
-  }
-
   function setAutoCleanUp(isOn) {
     autoCleanUpInput.checked = isOn;
   }
@@ -247,7 +238,6 @@ export function createToolbar(handlers) {
     setAuto,
     setAutoCleanUp,
     setSnap,
-    setWriting,
     setAsk,
     setNotesShown,
     setTutorOn,

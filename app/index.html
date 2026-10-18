@@ -84,10 +84,6 @@
             <input id="snap-shapes" type="checkbox" checked />
             Snap
           </label>
-          <label class="toggle" title="Steadier handwriting that works like a mouse: the ink moves by how much you turn the pen, so your hand stays in one place. With the pen lifted it moves like a mouse: fast moves go far, slow moves go a little, so ease back slowly to reset your wrist. A double tap jumps to where you point. Strokes are smoothed when you lift the pen. Gain and string length are in the D panel">
-            <input id="writing-mode" type="checkbox" />
-            Write
-          </label>
 
           <button id="undo" class="btn icon-only" title="Undo (Ctrl+Z)" aria-label="Undo">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
@@ -308,7 +304,7 @@
       </section>
 
       <section class="debug-section">
-        <div class="debug-title">Writing mode (Write in the toolbar)</div>
+        <div class="debug-title">Writing</div>
         <label class="tuning-row" for="tune-writing-string" title="Lazy brush: the ink trails the cursor on a string this long, so wobble inside it never reaches the ink">
           <span>String length</span>
           <output id="tune-writing-string-value"></output>

@@ -16,7 +16,7 @@
 //   with x and y from -1 to 1 across the page.
 //   Relative. Turning speed moves the cursor, like a mouse. The rest of this comment is about it.
 //
-// Writing mode (writingMode, the toolbar's Write toggle) works in both. While the pen is down,
+// Writing mode (writingMode, which main.js always turns on) works in both. While the pen is down,
 // movement is scaled by writingGain (and precisionGain in ink/writing.js, if writingCurve is
 // set). The lazy brush and the curve fit happen in the ink canvas.
 //
