@@ -34,9 +34,20 @@ function loadKatex() {
 
 const TUTOR_KIND_LABELS = { grammar: 'Grammar', spelling: 'Spelling', math: 'Math', fact: 'Fact', other: 'Note' };
 
-export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExport, onTutorOpen, onTutorAsk, onTutorFix, onTutorRetry, onTutorDismiss }) {
+export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExport, onTutorAskPage, onTutorOpen, onTutorAsk, onTutorFix, onTutorRetry, onTutorDismiss }) {
   const fileEl = document.getElementById('notes-file');
   const blocksEl = document.getElementById('notes-blocks');
+  // "Ask about this page", under the notes while tutor mode is on.
+  const pageAskForm = document.getElementById('tutor-page-ask');
+  const pageAskInput = document.getElementById('tutor-page-input');
+  pageAskForm.addEventListener('submit', function (event) {
+    event.preventDefault();
+    const text = pageAskInput.value.trim();
+    if (text !== '') {
+      pageAskInput.value = '';
+      onTutorAskPage(text);
+    }
+  });
   let pendingEl = null;
   let shown = null;
   let tutorOn = false;
@@ -56,6 +67,9 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     fileEl.textContent = tab.name;
     fileEl.title = tab.path || tab.name;
     blocksEl.replaceChildren();
+    // The whiteboard has no page to read, so the question is just a question.
+    pageAskForm.hidden = !tutorOn || !tab.notes;
+    pageAskInput.placeholder = tab.doc.file ? 'Ask the tutor about this page…' : 'Ask the tutor anything…';
 
     if (!tab.notes) {
       blocksEl.appendChild(paragraph('notes-empty', 'Loading notes…'));
@@ -108,7 +122,7 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     head.className = 'tutor-head';
     head.appendChild(span('tutor-label', 'Tutor'));
     if (review) {
-      head.appendChild(span('tutor-verdict', { issues: 'Check this', question: 'Question', correct: 'Looks right' }[review.verdict]));
+      head.appendChild(span('tutor-verdict', { issues: 'Check this', explain: 'Explanation', question: 'Question', correct: 'Looks right' }[review.verdict]));
     }
     const dismiss = document.createElement('button');
     dismiss.className = 'tutor-dismiss';
@@ -230,11 +244,12 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
 
   function setTutorOn(isOn) {
     tutorOn = isOn;
+    pageAskForm.hidden = !isOn;
   }
 
   function renderBlock(block, multiPage) {
     const el = document.createElement('div');
-    el.className = 'note-block';
+    el.className = 'note-block' + (block.asked ? ' asked' : '');
 
     if (multiPage) {
       const pageTag = document.createElement('button');
@@ -250,8 +265,22 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     const body = document.createElement('div');
     body.className = 'note-body';
     body.title = 'Click to edit';
+    if (block.asked) {
+      body.appendChild(span('note-asked', 'You asked'));
+    }
     renderMarkdown(block.text, body);
     typeset(body, block.text);
+    // A drawing with no words shows as the drawing itself, with any caption typed above it.
+    if (block.sketch) {
+      const img = document.createElement('img');
+      img.className = 'note-sketch';
+      img.src = block.sketch;
+      img.alt = 'Your drawing';
+      if (block.text === '') {
+        body.title = 'Click to add a caption';
+      }
+      body.appendChild(img);
+    }
     body.addEventListener('click', function () {
       startEditing(el, body, block);
     });

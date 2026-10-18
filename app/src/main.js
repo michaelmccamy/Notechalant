@@ -6,7 +6,7 @@
 //   explorer / tabs         ->  openDocument  ->  pageView (one page, ink canvas on top)
 //   ink changes             ->  captureInk (page units)  ->  saved to .notechalant/ in the folder
 //   pen pauses              ->  notes controller  ->  recognize new strokes  ->  that file's notes
-//   tutor mode              ->  each new note  ->  tutor review (corrections, questions)  ->  card under it
+//   tutor mode              ->  each new note or drawing, plus a picture of the page  ->  tutor review  ->  card under it
 //   Save copy               ->  buildCopy (document + ink)  ->  new file next to the original
 
 import { createInkCanvas } from './ink/inkCanvas.js';
@@ -24,6 +24,7 @@ import { createToolbar } from './ui/toolbar.js';
 import { recognizeImage } from './recognize.js';
 import { createNotesController } from './notes/notesController.js';
 import { reviewNote, askTutor } from './tutor/tutorClient.js';
+import { snapshotPage } from './tutor/pageSnapshot.js';
 import { createWhiteboard, openDocument } from './files/documents.js';
 import { createPageView } from './files/pageView.js';
 import { createExplorer } from './files/explorer.js';
@@ -150,6 +151,14 @@ const notes = createNotesController({
   goToPage: goToPage,
   recognize: recognizeImage,
   tutor: { review: reviewNote, ask: askTutor },
+  // The tutor sees the page only while it's the one on screen, since that's what gets pictured.
+  snapshot: function (tab, page) {
+    if (tab !== activeTab || tab.page !== page) {
+      return Promise.resolve(null);
+    }
+    captureInk();
+    return snapshotPage(tab.doc, page, pageView.content, tab.ink[page]);
+  },
   idleMs: TRANSCRIBE_IDLE_MS,
   onStatus: function (text, isError) {
     toolbar.setStatus(text, isError);

@@ -23,9 +23,13 @@ import { emptyTutor, worthReviewing, applyFix, resolveIssue, addMessage } from '
 
 const CONTEXT_CHARS = 400;
 const TUTOR_CONTEXT_CHARS = 1200;
+// A drawing with no words is kept with its note as a thumbnail this size.
+const SKETCH_THUMB_SIDE = 480;
 
-// tutor is { review(text, context), ask(text, context, thread) } (tutor/tutorClient.js).
-export function createNotesController({ getActiveTab, getFolder, isWriting, lastInkChangeAt, goToPage, recognize, tutor, idleMs, onStatus, onBusyChange }) {
+// tutor is { review(text, context, seen), ask(text, context, thread, seen) } (tutor/tutorClient.js).
+// snapshot(tab, page) resolves to what the tutor can see of that page (tutor/pageSnapshot.js),
+// or null when the page isn't the one on screen.
+export function createNotesController({ getActiveTab, getFolder, isWriting, lastInkChangeAt, goToPage, recognize, tutor, snapshot, idleMs, onStatus, onBusyChange }) {
   let auto = true;
   // Tutor mode: every new transcription is also checked by the tutor.
   let tutorOn = false;
@@ -34,6 +38,9 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
   let failedKey = null;
 
   const panel = createNotesPanel({
+    onTutorAskPage: function (text) {
+      askPage(text);
+    },
     onTutorOpen: function (id) {
       const tab = getActiveTab();
       const block = findBlock(tab.notes, id);
@@ -178,9 +185,10 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     }
     onStatus('Transcribing…');
 
+    const png = strokesToPng(fresh);
     let text;
     try {
-      text = await recognize(strokesToPng(fresh), contextTail(tab.notes, CONTEXT_CHARS));
+      text = await recognize(png, contextTail(tab.notes, CONTEXT_CHARS));
     } catch (err) {
       failedKey = key;
       finish();
@@ -196,9 +204,20 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     if (getActiveTab() === tab) {
       panel.render(tab, tab.page, block ? block.id : null);
     }
-    onStatus(block ? 'Added to notes' : 'No writing found, kept it as ink');
-    if (block && tutorOn && worthReviewing(block.text)) {
-      reviewBlock(tab, block);
+    if (block) {
+      onStatus('Added to notes');
+      if (tutorOn && worthReviewing(block.text)) {
+        reviewBlock(tab, block, png);
+      }
+    } else if (tutorOn && fresh.length > 0) {
+      // No words, but a diagram, a graph, or a question mark on the page is still worth a look.
+      // The drawing gets a note of its own, which goes away if the tutor has nothing to say.
+      const drawing = addBlock(tab.notes, '', page);
+      drawing.sketch = strokesToPng(fresh, SKETCH_THUMB_SIDE);
+      onStatus('Tutor is looking at your drawing…');
+      reviewBlock(tab, drawing, png);
+    } else {
+      onStatus('No writing found, kept it as ink');
     }
   }
 
@@ -208,12 +227,15 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
   // block it started with, so an answer that arrives after switching files still lands on the
   // right note and saves to the right place.
 
-  async function reviewBlock(tab, block) {
+  // sketch is the full-size picture of the new ink, when there is one. A retry has only the
+  // note's saved thumbnail, or nothing for written notes, and goes by the text and page.
+  async function reviewBlock(tab, block, sketch) {
     block.tutor = Object.assign(block.tutor || emptyTutor(), { pending: true, error: '' });
     showTutor(tab);
     let review;
     try {
-      review = await tutor.review(block.text, contextBefore(tab.notes, block.id, TUTOR_CONTEXT_CHARS));
+      const seen = { sketch: sketch || block.sketch || null, page: await snapshot(tab, block.page) };
+      review = await tutor.review(block.text, contextBefore(tab.notes, block.id, TUTOR_CONTEXT_CHARS), seen);
     } catch (err) {
       review = err;
     }
@@ -226,9 +248,14 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
       block.tutor.error = review.message;
     } else {
       block.tutor.review = review;
-      // A quiet tutor with nothing else on the card leaves the note as it was.
+      // A quiet tutor with nothing else on the card leaves the note as it was. A drawing that
+      // only got a note so the tutor could look at it goes away again.
       if (block.tutor.review === null && block.tutor.thread.length === 0) {
         delete block.tutor;
+        if (block.text === '') {
+          removeBlock(tab.notes, block.id);
+          onStatus('No writing found, kept it as ink');
+        }
       }
       if (block.tutor && block.tutor.review) {
         onStatus(tutorStatus(block.tutor.review));
@@ -236,6 +263,20 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     }
     showTutor(tab);
     save(tab);
+  }
+
+  // A question typed into "Ask about this page". It becomes a note of its own, marked as asked,
+  // with the tutor's answer under it.
+  function askPage(text) {
+    const tab = getActiveTab();
+    if (!tab.notes || text.trim() === '') {
+      return;
+    }
+    const block = addBlock(tab.notes, text.trim(), tab.page);
+    block.asked = true;
+    block.tutor = emptyTutor();
+    addMessage(block.tutor, 'student', block.text);
+    sendThread(tab, block);
   }
 
   function askAbout(tab, id, text) {
@@ -258,7 +299,8 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     const thread = block.tutor.thread;
     let reply;
     try {
-      reply = await tutor.ask(block.text, contextBefore(tab.notes, block.id, TUTOR_CONTEXT_CHARS), thread);
+      const seen = { sketch: block.sketch || null, page: await snapshot(tab, block.page) };
+      reply = await tutor.ask(block.text, contextBefore(tab.notes, block.id, TUTOR_CONTEXT_CHARS), thread, seen);
     } catch (err) {
       reply = err;
     }
@@ -288,6 +330,9 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     }
     if (review.verdict === 'question') {
       return 'Tutor has a question for you';
+    }
+    if (review.verdict === 'explain') {
+      return 'Tutor explained it in your notes';
     }
     return 'Tutor checked it. Looks right';
   }
