@@ -136,3 +136,12 @@ test('writing mode works like a mouse: slow moves go a little, fast moves go far
   const centered = feed(motion, state, 0.1, 0, 0);
   assert.ok(Math.abs(centered.x) < 1e-3, 'jumps to the pen: ' + centered.x);
 });
+
+test('curve fit keeps sharp corners sharp: the tip of a V stays put', function () {
+  const v = [];
+  for (let i = 0; i <= 30; i++) v.push({ x: 100 + i * 2, y: 100 + i * 5 });
+  for (let i = 1; i <= 30; i++) v.push({ x: 160 + i * 2, y: 250 - i * 5 });
+  const smooth = smoothStroke(v);
+  const lowest = Math.max(...smooth.map((p) => p.y));
+  assert.ok(lowest > 249, 'the tip is still at the bottom: ' + lowest);
+});

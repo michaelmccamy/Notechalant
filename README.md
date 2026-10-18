@@ -23,6 +23,7 @@ Built at SwampHacks XII, for about $25 in parts.
 - With **Ask** on, the pen aims like a laser pointer instead, so you can point at something on a slide and circle it.
 - **Clean up** (switch): rough lines, circles, and boxes snap to clean ones, and after a pause your handwriting is replaced by typed text, with math typeset. Undo brings back what you drew.
 - **Auto** (switch): after each pause, new writing is typed up into the Notes panel. With it off, press **Enter**.
+- **Hold to snap:** keep your finger on the pad and hold still for a moment at the end of a stroke. A rough line, circle, box, triangle, or arrow becomes a clean one, and a letter made of straight strokes (L, V, Z) gets them straightened. On a curvy letter, holding types your writing up as soon as you lift. Undo brings back what you drew.
 - **Eraser** (button or **E**) removes strokes and typed words it passes over.
 
 **Asking and the tutor**

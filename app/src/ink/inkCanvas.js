@@ -14,6 +14,11 @@ import { isText } from './inkItems.js';
 import { lazyFollow } from './writing.js';
 
 const MIN_POINT_DISTANCE = 1.5;
+// Hold to snap: holding the cursor within HOLD_RADIUS px for HOLD_MS with the pen down, on a
+// stroke at least HOLD_MIN_PATH px long, asks the hold handler for a clean version of it.
+const HOLD_RADIUS = 6;
+const HOLD_MS = 600;
+const HOLD_MIN_PATH = 15;
 const CURSOR_RADIUS = 6;
 const FADE_MS = 500;
 const ERASER_RADIUS = 12;
@@ -59,6 +64,9 @@ export function createInkCanvas(canvas, options) {
   let lazyRadius = 0;
   let brush = null;
   let smoother = null;
+  // Hold to snap: takes the stroke being drawn and returns { stroke } with clean points, or null.
+  let hold = null;
+  let holdAnchor = null;
 
   function inkChanged() {
     revision++;
@@ -79,16 +87,57 @@ export function createInkCanvas(canvas, options) {
   function startStroke(x, y) {
     current = { color: color, width: width, points: [{ x: x, y: y }] };
     brush = { x: x, y: y };
+    holdAnchor = { x: x, y: y, t: performance.now() };
+  }
+
+  // While the pen is down: once the cursor has stayed put for HOLD_MS, the stroke is handed to
+  // the hold handler once. If it comes back clean, it's shown that way at once and drawing stops
+  // until the pen lifts. heldFrom keeps what was drawn, for Undo.
+  function checkHold() {
+    if (hold === null || current.held) {
+      return;
+    }
+    const now = performance.now();
+    if (Math.hypot(cursor.x - holdAnchor.x, cursor.y - holdAnchor.y) > HOLD_RADIUS) {
+      holdAnchor = { x: cursor.x, y: cursor.y, t: now };
+      return;
+    }
+    if (now - holdAnchor.t < HOLD_MS || pathLength(current.points) < HOLD_MIN_PATH) {
+      return;
+    }
+    current.held = true;
+    const result = hold(current);
+    if (result !== null) {
+      current.heldFrom = current.points;
+      current.points = result.stroke.points;
+      inkChanged();
+    }
   }
 
   function finishStroke() {
     if (current === null) {
       return;
     }
+    brush = null;
+    holdAnchor = null;
+    if (current.heldFrom) {
+      // Snapped by holding: kept as is. The first Undo puts back what was drawn.
+      const drawn = { color: current.color, width: current.width, points: current.heldFrom };
+      const clean = { color: current.color, width: current.width, points: current.points };
+      current = null;
+      strokes.push(clean);
+      undoStack.push({ type: 'stroke' });
+      undoStack.push({ type: 'snap', stroke: clean, original: drawn });
+      inkChanged();
+      if (onStrokeFinished !== null) {
+        onStrokeFinished(clean);
+      }
+      return;
+    }
+    delete current.held;
     if (smoother !== null) {
       current.points = smoother(current.points);
     }
-    brush = null;
     strokes.push(current);
     undoStack.push({ type: 'stroke' });
     const snapped = snap === null ? null : snap(current);
@@ -121,6 +170,10 @@ export function createInkCanvas(canvas, options) {
     smoother = fn;
   }
 
+  function setHold(fn) {
+    hold = fn;
+  }
+
   // Absolute positioning, used by the mouse and by moveBy.
   function moveTo(x, y, penDown) {
     cursor.x = x;
@@ -140,7 +193,14 @@ export function createInkCanvas(canvas, options) {
     } else if (!penDown && current !== null) {
       finishStroke();
       inkChanged();
+    } else if (penDown && current.heldFrom) {
+      // Already snapped by holding: nothing more is drawn until the pen lifts.
     } else if (penDown) {
+      checkHold();
+      if (current.heldFrom) {
+        needsRender = true;
+        return;
+      }
       if (lazyRadius > 0) {
         brush = lazyFollow(brush, cursor, lazyRadius);
       } else {
@@ -501,6 +561,7 @@ export function createInkCanvas(canvas, options) {
     setSnap,
     setLazyRadius,
     setSmoother,
+    setHold,
     setStrokeListener,
     setErasing,
     isErasing,
@@ -521,6 +582,14 @@ export function createInkCanvas(canvas, options) {
 export function textHit(item, x, y, radius) {
   const box = item.box;
   return x >= box.x - radius && x <= box.x + box.width + radius && y >= box.y - radius && y <= box.y + box.height + radius;
+}
+
+function pathLength(points) {
+  let length = 0;
+  for (let i = 1; i < points.length; i++) {
+    length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y);
+  }
+  return length;
 }
 
 export function strokeHit(stroke, x, y, radius) {

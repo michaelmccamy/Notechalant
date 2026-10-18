@@ -12,7 +12,7 @@
 //                   the string never reaches the ink. inkCanvas.js applies it while drawing.
 //   smoothStroke    a light curve fit when the pen lifts: a gentle average, then drop points
 //                   that sit on the line between their neighbors, then a Catmull-Rom curve back
-//                   through what's left.
+//                   through what's left. Sharp corners split the stroke, so they stay sharp.
 
 // Below the reference speed the gain falls off as (speed / mid) to the power curve, but never
 // below this share of the full writing gain, so a slow, careful stroke still draws.
@@ -42,12 +42,32 @@ export function lazyFollow(brush, target, radius) {
 const SIMPLIFY_TOLERANCE = 1;
 // The curve is sampled about this often, in pixels.
 const CURVE_STEP = 3;
+// A corner is a turn sharper than CORNER_MIN_DEG, measured between the stroke CORNER_ARM px
+// before a point and CORNER_ARM px after it. The stroke is smoothed in pieces between corners,
+// so a box, a k, or a v keeps its points instead of being rounded off.
+const CORNER_MIN_DEG = 55;
+const CORNER_ARM = 7;
 
 // points: [{ x, y }]. Returns new points for the same stroke, smoothed. Short strokes and dots
-// come back as they are. The first and last points never move.
+// come back as they are. The first and last points, and corners, never move.
 export function smoothStroke(points) {
   if (points.length < 4) {
     return points;
+  }
+  const corners = findCorners(points);
+  const out = [];
+  let start = 0;
+  for (const end of [...corners, points.length - 1]) {
+    const piece = smoothPiece(points.slice(start, end + 1));
+    out.push(...(out.length === 0 ? piece : piece.slice(1)));
+    start = end;
+  }
+  return out;
+}
+
+function smoothPiece(points) {
+  if (points.length < 4) {
+    return points.slice();
   }
   const averaged = points.map(function (p, i) {
     if (i === 0 || i === points.length - 1) {
@@ -58,6 +78,62 @@ export function smoothStroke(points) {
     return { x: (a.x + 2 * p.x + b.x) / 4, y: (a.y + 2 * p.y + b.y) / 4 };
   });
   return catmullRom(simplify(averaged, SIMPLIFY_TOLERANCE), CURVE_STEP);
+}
+
+// Indices of the sharpest point of each sharp turn, not counting the ends. arm and minDeg
+// default to the smoothing's (shapes.js passes ones scaled to the shape).
+export function findCorners(points, arm, minDeg) {
+  arm = arm || CORNER_ARM;
+  minDeg = minDeg || CORNER_MIN_DEG;
+  const turns = points.map(function (p, i) {
+    const before = walk(points, i, -1, arm);
+    const after = walk(points, i, 1, arm);
+    if (before === null || after === null) {
+      return 0;
+    }
+    const a = Math.atan2(p.y - before.y, p.x - before.x);
+    const b = Math.atan2(after.y - p.y, after.x - p.x);
+    let d = Math.abs(b - a);
+    if (d > Math.PI) {
+      d = 2 * Math.PI - d;
+    }
+    return (d * 180) / Math.PI;
+  });
+  const corners = [];
+  for (let i = 1; i < points.length - 1; i++) {
+    if (turns[i] < minDeg) {
+      continue;
+    }
+    // The sharpest point within the arm on either side.
+    const before = corners.length > 0 ? corners[corners.length - 1] : -Infinity;
+    if (i - before < 2) {
+      if (turns[i] > turns[before]) {
+        corners[corners.length - 1] = i;
+      }
+      continue;
+    }
+    let best = true;
+    for (let j = i + 1; j < points.length && Math.hypot(points[j].x - points[i].x, points[j].y - points[i].y) < arm; j++) {
+      if (turns[j] > turns[i]) {
+        best = false;
+        break;
+      }
+    }
+    if (best && (corners.length === 0 || Math.hypot(points[i].x - points[corners[corners.length - 1]].x, points[i].y - points[corners[corners.length - 1]].y) >= arm)) {
+      corners.push(i);
+    }
+  }
+  return corners;
+}
+
+// The first point at least arm px from points[i], going in direction step, or null.
+function walk(points, i, step, arm) {
+  for (let j = i + step; j >= 0 && j < points.length; j += step) {
+    if (Math.hypot(points[j].x - points[i].x, points[j].y - points[i].y) >= arm) {
+      return points[j];
+    }
+  }
+  return null;
 }
 
 // Ramer-Douglas-Peucker: keeps the points that matter for the shape.

@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { snapStroke, isClosedLoop, isJustMarks, underlineOf } from '../src/ink/shapes.js';
+import { snapStroke, snapHeld, isClosedLoop, isJustMarks, underlineOf } from '../src/ink/shapes.js';
 
 // Seeded wobble, so a "hand drawn" stroke is the same every run.
 let seed = 7;
@@ -142,4 +142,86 @@ test('an underline is a long, nearly level, straight stroke', function () {
   assert.equal(underlineOf(handLine(0, 0, 200, 200, 2).points), null, 'a diagonal');
   assert.equal(underlineOf(handLine(0, 0, 40, 0, 1).points), null, 'too short, like a minus sign');
   assert.equal(underlineOf(handEllipse(200, 200, 100, 10, 1).points), null, 'a flat loop is not straight');
+});
+
+// Points along straight pieces through the given corners, every few px, with a little wobble.
+function polyline(corners, closed) {
+  const pts = [];
+  const all = closed ? [...corners, corners[0]] : corners;
+  for (let i = 1; i < all.length; i++) {
+    const [ax, ay] = all[i - 1];
+    const [bx, by] = all[i];
+    const n = Math.max(2, Math.round(Math.hypot(bx - ax, by - ay) / 4));
+    for (let k = 0; k < n; k++) {
+      const t = k / n;
+      pts.push([ax + (bx - ax) * t + Math.sin(pts.length) * 1.2, ay + (by - ay) * t + Math.cos(pts.length * 1.3) * 1.2]);
+    }
+  }
+  pts.push(all[all.length - 1]);
+  return stroke(pts);
+}
+
+// A box with rounded corners, like the air pen draws one: radius r.
+function roundBox(x0, y0, x1, y1, r) {
+  const pts = [];
+  const arcs = [
+    [x1 - r, y0 + r, -Math.PI / 2],
+    [x1 - r, y1 - r, 0],
+    [x0 + r, y1 - r, Math.PI / 2],
+    [x0 + r, y0 + r, Math.PI],
+  ];
+  for (const [cx, cy, start] of arcs) {
+    for (let k = 0; k <= 8; k++) {
+      const a = start + (k / 8) * (Math.PI / 2);
+      pts.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]);
+    }
+  }
+  pts.push(pts[0]);
+  return stroke(pts.flatMap((p, i) => (i === 0 ? [p] : [[(pts[i - 1][0] + p[0]) / 2, (pts[i - 1][1] + p[1]) / 2], p])));
+}
+
+test('a triangle snaps on lift and on hold, with three sharp corners', function () {
+  const tri = polyline([[100, 200], [200, 40], [300, 200]], true);
+  assert.equal(snapStroke(tri).shape, 'triangle');
+  assert.equal(snapHeld(tri).shape, 'triangle');
+});
+
+test('an arrow needs barbs on both sides, so a line with a hook at the end stays a line', function () {
+  const arrow = polyline([[50, 100], [250, 100], [225, 85], [250, 100], [225, 115]]);
+  assert.equal(snapStroke(arrow).shape, 'arrow');
+  assert.equal(snapHeld(arrow).shape, 'arrow');
+  const hooked = polyline([[50, 100], [250, 100], [232, 112]]);
+  const result = snapStroke(hooked);
+  assert.ok(result === null || result.shape !== 'arrow', 'a hook is not an arrow');
+});
+
+test('hold to snap: a box with round corners is a rectangle, a circle an ellipse, a line a line', function () {
+  assert.equal(snapHeld(roundBox(100, 100, 340, 230, 30)).shape, 'rectangle');
+  const circle = [];
+  for (let k = 0; k <= 40; k++) circle.push([200 + 80 * Math.cos((k / 40) * 2 * Math.PI), 200 + 60 * Math.sin((k / 40) * 2 * Math.PI)]);
+  assert.equal(snapHeld(stroke(circle)).shape, 'ellipse');
+  assert.equal(snapHeld(polyline([[100, 100], [104, 260]])).shape, 'line');
+});
+
+test('hold to snap straightens letters made of straight strokes, and leaves curvy ones', function () {
+  for (const [name, corners] of [['L', [[100, 50], [100, 200], [180, 200]]], ['V', [[100, 50], [150, 200], [200, 50]]], ['Z', [[100, 50], [200, 50], [100, 200], [200, 200]]]]) {
+    const result = snapHeld(polyline(corners));
+    assert.equal(result && result.shape, 'straight', name);
+    // The corners come back exactly, doubled so they draw sharp.
+    const pts = result.stroke.points;
+    assert.ok(pts.length === 2 * corners.length - 2, name + ' points ' + pts.length);
+  }
+  // An S: two half circles, the top one curving left, the bottom one right.
+  const s = [];
+  for (let k = 0; k <= 30; k++) {
+    const a = -Math.PI / 6 - (k / 30) * Math.PI;
+    s.push([150 + 40 * Math.cos(a), 90 + 40 * Math.sin(a) * -1]);
+  }
+  for (let k = 1; k <= 30; k++) {
+    const a = -Math.PI / 2 + (k / 30) * Math.PI;
+    s.push([150 + 40 * Math.cos(a), 170 + 40 * Math.sin(a)]);
+  }
+  const result = snapHeld(stroke(s));
+  assert.ok(result === null || result.shape !== 'straight', 'an S is not straightened: ' + (result && result.shape));
+  assert.equal(snapStroke(polyline([[100, 50], [150, 200], [200, 50]])), null, 'a V is never snapped on lift');
 });

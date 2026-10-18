@@ -11,7 +11,7 @@
 
 import { createInkCanvas } from './ink/inkCanvas.js';
 import { createTextLayer } from './ink/textLayer.js';
-import { snapStroke, strokeBox, isClosedLoop, underlineOf } from './ink/shapes.js';
+import { snapStroke, snapHeld, strokeBox, isClosedLoop, underlineOf } from './ink/shapes.js';
 import { smoothStroke } from './ink/writing.js';
 import { createCircleToAsk, explainImage } from './ask/circleToAsk.js';
 import { makeTextItem, strokesSignature, sameSignature, handwriting, handwritingPages } from './ink/inkItems.js';
@@ -303,7 +303,24 @@ const UNDERLINE_REACH = 0.12;
 const UNDERLINE_REACH_MIN = 50;
 const UNDERLINE_REACH_MAX = 160;
 
+// Hold to snap: hold the pen still for a moment at the end of a stroke. A rough line, circle, box,
+// triangle, or arrow becomes a clean one, and a letter made of straight strokes (an L, a V, a Z)
+// gets them straightened. If it's none of those, like a curvy letter, holding means "done": the
+// writing is typed up as soon as the pen lifts, without waiting for the pause.
+let typeUpOnLift = false;
+ink.setHold(function (stroke) {
+  const clean = snapHeld(stroke);
+  if (clean === null) {
+    typeUpOnLift = !askOn;
+  }
+  return clean;
+});
+
 ink.setStrokeListener(function (stroke) {
+  if (typeUpOnLift) {
+    typeUpOnLift = false;
+    setTimeout(transcribeNow, 0);
+  }
   const box = strokeBox(stroke.points);
   if (circleToAsk.isOpen() && box.width < 6 && box.height < 6) {
     ink.dropTrailingDots(1);
