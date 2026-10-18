@@ -5,13 +5,14 @@ const PADDING = 24;
 // Big pages (a 4000px photo) would make huge images. Shrink anything larger than this.
 const MAX_SIDE = 1600;
 
-export function strokesToPng(items) {
+// maxSide makes a smaller picture, like the thumbnail the tutor keeps with a note.
+export function strokesToPng(items, maxSide) {
   // Typed text from clean up is already read, so only handwriting goes in the picture.
   const strokes = items.filter((item) => item.type !== 'text');
   const box = boundsOf(strokes);
   const width = box.maxX - box.minX + PADDING * 2;
   const height = box.maxY - box.minY + PADDING * 2;
-  const scale = Math.min(1, MAX_SIDE / Math.max(width, height));
+  const scale = Math.min(1, (maxSide || MAX_SIDE) / Math.max(width, height));
 
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(width * scale));

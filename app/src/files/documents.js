@@ -3,7 +3,8 @@
 //   { name, path, file, kind, pageCount, pageSize(i) -> { width, height }, renderPage(i, el, scale), dispose(), message }
 //
 // `file` is the original File (null for the whiteboard) and `kind` is from kindOf. Saving a copy
-// with the ink on it reads both.
+// with the ink on it reads both. Text and PDF documents also have pageText(i) -> Promise<string>,
+// which the tutor reads along with a picture of the page.
 //
 // Page sizes are in "page units" (pixels at 100% zoom). Ink is saved in page units, so it stays on
 // the same spot of the page whatever size the window is. renderPage draws into `el`, which is
@@ -146,6 +147,9 @@ function openText(file, path, text) {
       pre.textContent = pages[index].join('\n');
       el.appendChild(pre);
     },
+    pageText: async function (index) {
+      return pages[index].join('\n');
+    },
     dispose: function () {},
     message: '',
   };
@@ -248,6 +252,17 @@ async function openPdf(file, path) {
             console.error('PDF page ' + (index + 1) + ' failed to render', err);
           }
         });
+    },
+    // The page's text in reading order, so the tutor reads exactly what's printed. Scanned PDFs
+    // have none, and the tutor falls back to the page picture.
+    pageText: async function (index) {
+      const content = await (await pdf.getPage(index + 1)).getTextContent();
+      return content.items
+        .map(function (item) {
+          return (item.str || '') + (item.hasEOL ? '\n' : '');
+        })
+        .join('')
+        .trim();
     },
     dispose: function () {
       disposed = true;

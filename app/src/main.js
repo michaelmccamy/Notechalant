@@ -6,14 +6,14 @@
 //   explorer / tabs         ->  openDocument  ->  pageView (one page, ink canvas on top)
 //   ink changes             ->  captureInk (page units)  ->  saved to .notechalant/ in the folder
 //   pen pauses              ->  notes controller  ->  recognize new strokes  ->  that file's notes
-//   tutor mode              ->  each new note  ->  tutor review (corrections, questions)  ->  card under it
+//   tutor mode              ->  each new note or drawing, plus a picture of the page  ->  tutor review  ->  card under it
 //   Save copy               ->  buildCopy (document + ink)  ->  new file next to the original
 
 import { createInkCanvas } from './ink/inkCanvas.js';
 import { createTextLayer } from './ink/textLayer.js';
 import { snapStroke, strokeBox, isClosedLoop } from './ink/shapes.js';
 import { createCircleToAsk } from './ask/circleToAsk.js';
-import { makeTextItem, strokesSignature, sameSignature, handwritingPages } from './ink/inkItems.js';
+import { makeTextItem, strokesSignature, sameSignature, handwriting, handwritingPages } from './ink/inkItems.js';
 import { attachMouse } from './input/mouse.js';
 import { createInputHub } from './input/hub.js';
 import { parseRecording } from './input/parseSample.js';
@@ -29,6 +29,7 @@ import { createDebugPanel } from './debug/debugPanel.js';
 import { recognizeImage } from './recognize.js';
 import { createNotesController } from './notes/notesController.js';
 import { reviewNote, askTutor } from './tutor/tutorClient.js';
+import { snapshotPage } from './tutor/pageSnapshot.js';
 import { createWhiteboard, openDocument } from './files/documents.js';
 import { createPageView } from './files/pageView.js';
 import { createExplorer } from './files/explorer.js';
@@ -206,6 +207,15 @@ const notes = createNotesController({
   recognize: recognizeImage,
   cleanUp: cleanUp,
   tutor: { review: reviewNote, ask: askTutor },
+  // The tutor sees the page only while it's the one on screen, since that's what gets pictured.
+  snapshot: function (tab, page) {
+    if (tab !== activeTab || tab.page !== page) {
+      return Promise.resolve(null);
+    }
+    captureInk();
+    // Cleaned up text goes in as the handwriting it replaced, since the picture draws strokes.
+    return snapshotPage(tab.doc, page, pageView.content, handwriting(tab.ink[page] || []));
+  },
   idleMs: TRANSCRIBE_IDLE_MS,
   onStatus: function (text, isError) {
     toolbar.setStatus(text, isError);

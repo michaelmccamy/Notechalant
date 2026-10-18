@@ -10,6 +10,7 @@ const PROMPT = [
   'Transcribe exactly what is written, as note text.',
   'Write any math as LaTeX inside $...$, or $$...$$ for an equation on its own line. Do not solve or simplify it.',
   'Use Markdown only for headings (#) and lists (- or 1.). No bold, no code fences.',
+  'In math, an x-shaped mark is the variable x. Read it as a multiplication sign only when it sits between two numbers or expressions being multiplied, like 3 × 4. Next to an operator or an equals sign (as in 7x + 4) it is always the variable x.',
   'If there is no writing, or only marks such as circles, arrows, underlines, or check marks, return exactly: (nothing recognized)',
   'Return only the transcription, with no commentary.',
 ].join(' ');
@@ -35,16 +36,25 @@ const EXPLAIN_TIMEOUT_MS = 20000;
 const PNG_PREFIX = 'data:image/png;base64,';
 const MAX_CONTEXT_CHARS = 600;
 
-function buildPrompt(context) {
-  if (!context) {
-    return PROMPT;
+// context: the end of the notes so far, to help with unclear words.
+// previous: what part of this same handwriting was read as before, when a line is read again
+// because more was written on it. Without it the model sometimes rereads a letter differently
+// (the x in "7x + 4" came back as a times sign once the line was sent again with "=").
+function buildPrompt(context, previous) {
+  let prompt = PROMPT;
+  if (previous) {
+    prompt +=
+      '\n\nPart of this handwriting was read earlier as the text below. More may have been written since. Transcribe everything in the image, and keep the earlier reading for the parts it covers unless the image clearly shows something else.\n"""\n' +
+      previous +
+      '\n"""';
   }
-  return (
-    PROMPT +
-    '\n\nThe notes so far end with the text below. Use it only to resolve unclear words or symbols. Do not repeat it.\n"""\n' +
-    context +
-    '\n"""'
-  );
+  if (context) {
+    prompt +=
+      '\n\nThe notes so far end with the text below. Use it only to resolve unclear words or symbols. Do not repeat it.\n"""\n' +
+      context +
+      '\n"""';
+  }
+  return prompt;
 }
 
 // index.mjs checks this at startup to warn about a missing key.
@@ -62,8 +72,9 @@ export async function recognize(body, env) {
 
   try {
     const context = typeof body.context === 'string' ? body.context.slice(-MAX_CONTEXT_CHARS).trim() : '';
+    const previous = typeof body.previous === 'string' ? body.previous.slice(0, MAX_CONTEXT_CHARS).trim() : '';
     const text = await generate(
-      [{ text: buildPrompt(context) }, { inline_data: { mime_type: 'image/png', data: image.slice(PNG_PREFIX.length) } }],
+      [{ text: buildPrompt(context, previous) }, { inline_data: { mime_type: 'image/png', data: image.slice(PNG_PREFIX.length) } }],
       env,
       { generationConfig: TRANSCRIBE_CONFIG, timeoutMs: TRANSCRIBE_TIMEOUT_MS },
     );

@@ -10,10 +10,23 @@ import { loadKatex, MATH_OPTIONS } from './katex.js';
 
 const TUTOR_KIND_LABELS = { grammar: 'Grammar', spelling: 'Spelling', math: 'Math', fact: 'Fact', other: 'Note' };
 
-export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExport, onTutorOpen, onTutorAsk, onTutorFix, onTutorRetry, onTutorDismiss }) {
+export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExport, onTutorAskPage, onTutorOpen, onTutorAsk, onTutorFix, onTutorRetry, onTutorDismiss }) {
   const fileEl = document.getElementById('notes-file');
   const blocksEl = document.getElementById('notes-blocks');
+  // "Ask about this page", under the notes while tutor mode is on.
+  const pageAskForm = document.getElementById('tutor-page-ask');
+  const pageAskInput = document.getElementById('tutor-page-input');
+  pageAskForm.addEventListener('submit', function (event) {
+    event.preventDefault();
+    const text = pageAskInput.value.trim();
+    if (text !== '') {
+      pageAskInput.value = '';
+      onTutorAskPage(text);
+    }
+  });
   let pendingEl = null;
+  // A note being read again because its line got more writing. It pulses in place.
+  let updatingId = null;
   let shown = null;
   let tutorOn = false;
   // What's typed in each tutor card's box, by block id. The panel redraws whenever a note or an
@@ -32,6 +45,9 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     fileEl.textContent = tab.name;
     fileEl.title = tab.path || tab.name;
     blocksEl.replaceChildren();
+    // The whiteboard has no page to read, so the question is just a question.
+    pageAskForm.hidden = !tutorOn || !tab.notes;
+    pageAskInput.placeholder = tab.doc.file ? 'Ask the tutor about this page…' : 'Ask the tutor anything…';
 
     if (!tab.notes) {
       blocksEl.appendChild(paragraph('notes-empty', 'Loading notes…'));
@@ -46,6 +62,7 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     for (const block of blocks) {
       const el = renderBlock(block, multiPage);
       el.classList.toggle('on-page', multiPage && block.page === currentPage);
+      el.classList.toggle('updating', block.id === updatingId);
       if (block.id === highlightId) {
         el.classList.add('fresh');
       }
@@ -84,7 +101,7 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     head.className = 'tutor-head';
     head.appendChild(span('tutor-label', 'Tutor'));
     if (review) {
-      head.appendChild(span('tutor-verdict', { issues: 'Check this', question: 'Question', correct: 'Looks right' }[review.verdict]));
+      head.appendChild(span('tutor-verdict', { issues: 'Check this', explain: 'Explanation', question: 'Question', correct: 'Looks right' }[review.verdict]));
     }
     const dismiss = document.createElement('button');
     dismiss.className = 'tutor-dismiss';
@@ -206,11 +223,13 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
 
   function setTutorOn(isOn) {
     tutorOn = isOn;
+    pageAskForm.hidden = !isOn;
   }
 
   function renderBlock(block, multiPage) {
     const el = document.createElement('div');
-    el.className = 'note-block';
+    el.className = 'note-block' + (block.asked ? ' asked' : '');
+    el.dataset.id = block.id;
 
     if (multiPage) {
       const pageTag = document.createElement('button');
@@ -226,8 +245,22 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     const body = document.createElement('div');
     body.className = 'note-body';
     body.title = 'Click to edit';
+    if (block.asked) {
+      body.appendChild(span('note-asked', 'You asked'));
+    }
     renderMarkdown(block.text, body);
     typeset(body, block.text);
+    // A drawing with no words shows as the drawing itself, with any caption typed above it.
+    if (block.sketch) {
+      const img = document.createElement('img');
+      img.className = 'note-sketch';
+      img.src = block.sketch;
+      img.alt = 'Your drawing';
+      if (block.text === '') {
+        body.title = 'Click to add a caption';
+      }
+      body.appendChild(img);
+    }
     body.addEventListener('click', function () {
       startEditing(el, body, block);
     });
@@ -290,8 +323,20 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     });
   }
 
-  // A placeholder at the bottom while a transcription for the shown file is in flight.
-  function setPending(isPending) {
+  // While a transcription for the shown file is in flight: the note being redone pulses if there
+  // is one (blockId), otherwise a placeholder waits at the bottom.
+  function setPending(isPending, blockId) {
+    updatingId = isPending && blockId ? blockId : null;
+    for (const el of blocksEl.querySelectorAll('.note-block[data-id]')) {
+      el.classList.toggle('updating', el.dataset.id === updatingId);
+    }
+    if (updatingId !== null) {
+      const el = blocksEl.querySelector('.note-block.updating');
+      if (el) {
+        el.scrollIntoView({ block: 'nearest' });
+      }
+      return;
+    }
     if (isPending && pendingEl === null) {
       pendingEl = paragraph('note-block pending', 'Transcribing…');
       blocksEl.appendChild(pendingEl);

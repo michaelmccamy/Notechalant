@@ -838,6 +838,12 @@ body.notes-hidden .notes {
   animation: note-pulse 1.2s ease-in-out infinite;
 }
 
+/* A note being read again because more was written on its line. */
+.note-block.updating {
+  background: var(--accent-tint);
+  animation: note-pulse 1.2s ease-in-out infinite;
+}
+
 @keyframes note-pulse {
   50% {
     opacity: 0.4;
@@ -1070,6 +1076,70 @@ body.notes-hidden .notes {
   padding: 4px 12px;
   border-radius: 999px;
   font-size: 13px;
+}
+
+.tutor-card.verdict-explain {
+  border-left-color: var(--accent-strong);
+}
+
+/* A drawing kept as a note, and a question typed about the page. */
+
+.note-sketch {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  margin-top: 4px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.note-asked {
+  display: inline-block;
+  margin-bottom: 2px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent-strong);
+}
+
+.note-block.asked .note-body p {
+  font-style: italic;
+}
+
+/* "Ask about this page", pinned under the notes in tutor mode. */
+
+.tutor-page-ask {
+  display: flex;
+  gap: 6px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--border);
+}
+
+.tutor-page-ask[hidden] {
+  display: none;
+}
+
+.tutor-page-ask input {
+  flex: 1;
+  min-width: 0;
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.tutor-page-ask input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.tutor-page-ask button {
+  border-radius: 999px;
 }
 
 /* Drop overlay */

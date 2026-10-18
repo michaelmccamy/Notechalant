@@ -130,3 +130,17 @@ test('typed text is sized to the handwriting box', function () {
   assert.equal(fitFontSize(10, 10, 5000, 5000), 600);
   assert.equal(fitFontSize(0, 0, 100, 100), 10);
 });
+
+test('undoing a clean up moves later notes along with the handwriting it puts back', function () {
+  const notes = emptyNotes();
+  notes.transcribed[0] = 3;
+  // A cleaned up note at item 1, and a later note on items 2 and 3 after it.
+  notes.blocks.push({ id: 'a', text: 'HI', page: 0, strokes: [] });
+  notes.blocks.push({ id: 'b', text: 'x', page: 0, strokes: [0, 2] });
+  notes.blocks.push({ id: 'c', text: 'other page', page: 1, strokes: [2] });
+  // Undo puts 3 strokes back where item 1 was.
+  handwritingRestored(notes, 0, 1, 3);
+  assert.equal(notes.transcribed[0], 5);
+  assert.deepEqual(notes.blocks[1].strokes, [0, 4], 'before stays, after moves by 2');
+  assert.deepEqual(notes.blocks[2].strokes, [2], 'other pages untouched');
+});

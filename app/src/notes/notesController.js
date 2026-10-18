@@ -13,6 +13,9 @@ import {
   markTranscribed,
   markCleanedUp,
   handwritingRestored,
+  strokesBox,
+  lineBlocks,
+  canRewrite,
   addBlock,
   editBlock,
   removeBlock,
@@ -31,18 +34,27 @@ import { emptyTutor, worthReviewing, applyFix, resolveIssue, addMessage } from '
 
 const CONTEXT_CHARS = 400;
 const TUTOR_CONTEXT_CHARS = 1200;
+// A drawing with no words is kept with its note as a thumbnail this size.
+const SKETCH_THUMB_SIDE = 480;
 
-// tutor is { review(text, context), ask(text, context, thread) } (tutor/tutorClient.js).
-export function createNotesController({ getActiveTab, getFolder, isWriting, lastInkChangeAt, goToPage, recognize, cleanUp, tutor, idleMs, onStatus, onBusyChange }) {
+// tutor is { review(text, context, seen), ask(text, context, thread, seen) } (tutor/tutorClient.js).
+// snapshot(tab, page) resolves to what the tutor can see of that page (tutor/pageSnapshot.js),
+// or null when the page isn't the one on screen. cleanUp swaps handwriting for typed text (main.js).
+export function createNotesController({ getActiveTab, getFolder, isWriting, lastInkChangeAt, goToPage, recognize, cleanUp, tutor, snapshot, idleMs, onStatus, onBusyChange }) {
   let auto = true;
   let autoCleanUp = false;
   // Tutor mode: every new transcription is also checked by the tutor.
   let tutorOn = false;
   // The tab a request is in flight for, or null.
   let busy = null;
+  // The note being read again for its line, shown pulsing in place of a new placeholder.
+  let busyBlockId = null;
   let failedKey = null;
 
   const panel = createNotesPanel({
+    onTutorAskPage: function (text) {
+      askPage(text);
+    },
     onTutorOpen: function (id) {
       const tab = getActiveTab();
       const block = findBlock(tab.notes, id);
@@ -66,6 +78,8 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
         onStatus("That text isn't in the note any more, so there's nothing to replace");
       } else {
         block.text = fixed;
+        // The ink still shows the old version, so reading the line again would undo the fix.
+        block.edited = true;
       }
       block.tutor.review = resolveIssue(block.tutor.review, index);
       changed(tab);
@@ -130,7 +144,7 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
   }
 
   function show(tab) {
-    panel.setPending(busy === tab);
+    panel.setPending(busy === tab, busy === tab ? busyBlockId : null);
     panel.render(tab, tab.page);
   }
 
@@ -174,17 +188,23 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     run(tab, tab.page, true);
   }
 
+  // Sends the page's new strokes. If they continue a line that already has a note, that line's
+  // strokes go along with them and the note is rewritten, so a line read in pieces ends up whole.
+  // manual is true for the Transcribe button, which always cleans up.
   async function run(tab, page, manual) {
     const strokes = tab.ink[page] || [];
     const fresh = untranscribed(tab.notes, page, strokes);
     const sentCount = strokes.length;
-    const start = sentCount - fresh.length;
-    const signature = strokesSignature(fresh);
     const key = attemptKey(tab, page, sentCount);
+    const freshIndexes = fresh.map((_, i) => sentCount - fresh.length + i);
+    const lines = lineBlocks(tab.notes, page, strokesBox(fresh));
+    const indexes = Array.from(new Set(lines.flatMap((block) => block.strokes).concat(freshIndexes))).sort((a, b) => a - b);
+    const sent = indexes.map((i) => strokes[i]);
 
     // An underline or a circle isn't writing. Count it as done without asking Gemini, so the
     // button doesn't light up for nothing.
-    if (isJustMarks(fresh.filter((item) => item.type !== 'text'))) {
+    // With tutor mode on the tutor looks at drawings too (a circle and a ?), so they still go.
+    if (!tutorOn && isJustMarks(fresh.filter((item) => item.type !== 'text'))) {
       markTranscribed(tab.notes, page, sentCount, sentCount);
       save(tab);
       if (manual) {
@@ -194,15 +214,26 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     }
 
     busy = tab;
+    busyBlockId = lines.length > 0 ? lines[0].id : null;
     onBusyChange(true);
     if (getActiveTab() === tab) {
-      panel.setPending(true);
+      panel.setPending(true, busyBlockId);
     }
-    onStatus('Transcribing…');
+    onStatus(lines.length > 0 ? 'Reading the whole line again…' : 'Transcribing…');
 
+    // The whole line when the new ink continues one, so recognition and the tutor see all of it.
+    const png = strokesToPng(sent);
     let text;
     try {
-      text = await recognize(strokesToPng(fresh), contextTail(tab.notes, CONTEXT_CHARS));
+      text = await recognize(
+        png,
+        contextTail(
+          tab.notes,
+          CONTEXT_CHARS,
+          lines.map((block) => block.id),
+        ),
+        lines.map((block) => block.text).join('\n'),
+      );
     } catch (err) {
       failedKey = key;
       finish();
@@ -211,25 +242,63 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     }
 
     failedKey = null;
-    const cleaned = text !== '' && (manual || autoCleanUp) && cleanUp(tab, page, start, sentCount, signature, text);
+    const strokesNow = (tab.ink[page] || []).length;
+    // Clean up needs the strokes read to be one unbroken run at the end, which they are unless
+    // a line was read again together with older strokes further back.
+    const contiguous = indexes.length > 0 && indexes[indexes.length - 1] - indexes[0] === indexes.length - 1 && indexes[indexes.length - 1] === sentCount - 1;
+    const cleaned =
+      text !== '' && contiguous && (manual || autoCleanUp) && cleanUp(tab, page, indexes[0], sentCount, strokesSignature(sent), text);
     if (cleaned) {
-      markCleanedUp(tab.notes, page, start);
+      markCleanedUp(tab.notes, page, indexes[0]);
     } else {
-      markTranscribed(tab.notes, page, sentCount, (tab.ink[page] || []).length);
+      markTranscribed(tab.notes, page, sentCount, strokesNow);
     }
-    const block = text ? addBlock(tab.notes, text, page) : null;
+    // Cleaned up text has no strokes left to read again, so its note isn't rewritten later.
+    const ink = { box: strokesBox(sent), strokes: cleaned ? [] : indexes.filter((i) => i < strokesNow) };
+    // The line's notes may have been deleted, edited, or taken into a tutor conversation while
+    // this was in flight. Those keep their text.
+    const live = lines.filter((block) => tab.notes.blocks.includes(block) && canRewrite(block));
+    let block = null;
+    let merged = false;
+    if (text && live.length > 0) {
+      block = live[0];
+      block.text = text;
+      block.box = ink.box;
+      block.strokes = ink.strokes;
+      // A review of the old text no longer fits. With tutor mode on, the tutor looks again below.
+      delete block.tutor;
+      // Writing that bridged two notes on the same line folds them into one.
+      for (const other of live.slice(1)) {
+        removeBlock(tab.notes, other.id);
+      }
+      merged = true;
+    } else if (text) {
+      block = addBlock(tab.notes, text, page, undefined, ink);
+    }
     finish();
     await save(tab);
     if (getActiveTab() === tab) {
       panel.render(tab, tab.page, block ? block.id : null);
     }
-    if (cleaned) {
-      onStatus('Cleaned up and added to notes. Undo brings the handwriting back');
+    if (block) {
+      if (cleaned) {
+        onStatus('Cleaned up and added to notes. Undo brings the handwriting back');
+      } else {
+        onStatus(merged ? 'Updated the note for this line' : 'Added to notes');
+      }
+      if (tutorOn && worthReviewing(block.text)) {
+        reviewBlock(tab, block, png);
+      }
+    } else if (tutorOn && fresh.length > 0) {
+      // No words, but a diagram, a graph, or a question mark on the page is still worth a look.
+      // The drawing gets a note of its own, which goes away if the tutor has nothing to say.
+      // It's just the new strokes, even when they sat on a line of writing.
+      const drawing = addBlock(tab.notes, '', page);
+      drawing.sketch = strokesToPng(fresh, SKETCH_THUMB_SIDE);
+      onStatus('Tutor is looking at your drawing…');
+      reviewBlock(tab, drawing, strokesToPng(fresh));
     } else {
-      onStatus(block ? 'Added to notes' : 'No writing found, kept it as ink');
-    }
-    if (block && tutorOn && worthReviewing(block.text)) {
-      reviewBlock(tab, block);
+      onStatus('No writing found, kept it as ink');
     }
   }
 
@@ -248,12 +317,15 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
   // block it started with, so an answer that arrives after switching files still lands on the
   // right note and saves to the right place.
 
-  async function reviewBlock(tab, block) {
+  // sketch is the full-size picture of the new ink, when there is one. A retry has only the
+  // note's saved thumbnail, or nothing for written notes, and goes by the text and page.
+  async function reviewBlock(tab, block, sketch) {
     block.tutor = Object.assign(block.tutor || emptyTutor(), { pending: true, error: '' });
     showTutor(tab);
     let review;
     try {
-      review = await tutor.review(block.text, contextBefore(tab.notes, block.id, TUTOR_CONTEXT_CHARS));
+      const seen = { sketch: sketch || block.sketch || null, page: await snapshot(tab, block.page) };
+      review = await tutor.review(block.text, contextBefore(tab.notes, block.id, TUTOR_CONTEXT_CHARS), seen);
     } catch (err) {
       review = err;
     }
@@ -266,9 +338,14 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
       block.tutor.error = review.message;
     } else {
       block.tutor.review = review;
-      // A quiet tutor with nothing else on the card leaves the note as it was.
+      // A quiet tutor with nothing else on the card leaves the note as it was. A drawing that
+      // only got a note so the tutor could look at it goes away again.
       if (block.tutor.review === null && block.tutor.thread.length === 0) {
         delete block.tutor;
+        if (block.text === '') {
+          removeBlock(tab.notes, block.id);
+          onStatus('No writing found, kept it as ink');
+        }
       }
       if (block.tutor && block.tutor.review) {
         onStatus(tutorStatus(block.tutor.review));
@@ -276,6 +353,20 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     }
     showTutor(tab);
     save(tab);
+  }
+
+  // A question typed into "Ask about this page". It becomes a note of its own, marked as asked,
+  // with the tutor's answer under it.
+  function askPage(text) {
+    const tab = getActiveTab();
+    if (!tab.notes || text.trim() === '') {
+      return;
+    }
+    const block = addBlock(tab.notes, text.trim(), tab.page);
+    block.asked = true;
+    block.tutor = emptyTutor();
+    addMessage(block.tutor, 'student', block.text);
+    sendThread(tab, block);
   }
 
   function askAbout(tab, id, text) {
@@ -298,7 +389,8 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     const thread = block.tutor.thread;
     let reply;
     try {
-      reply = await tutor.ask(block.text, contextBefore(tab.notes, block.id, TUTOR_CONTEXT_CHARS), thread);
+      const seen = { sketch: block.sketch || null, page: await snapshot(tab, block.page) };
+      reply = await tutor.ask(block.text, contextBefore(tab.notes, block.id, TUTOR_CONTEXT_CHARS), thread, seen);
     } catch (err) {
       reply = err;
     }
@@ -329,6 +421,9 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     if (review.verdict === 'question') {
       return 'Tutor has a question for you';
     }
+    if (review.verdict === 'explain') {
+      return 'Tutor explained it in your notes';
+    }
     return 'Tutor checked it. Looks right';
   }
 
@@ -340,6 +435,7 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
 
   function finish() {
     busy = null;
+    busyBlockId = null;
     onBusyChange(false);
     panel.setPending(false);
   }
