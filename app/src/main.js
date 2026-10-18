@@ -5,6 +5,7 @@
 //   explorer / tabs         ->  openDocument  ->  pageView (one page, ink canvas on top)
 //   ink changes             ->  captureInk (page units)  ->  saved to .notechalant/ in the folder
 //   pen pauses              ->  notes controller  ->  recognize new strokes  ->  that file's notes
+//   tutor mode              ->  each new note  ->  tutor review (corrections, questions)  ->  card under it
 //   Save copy               ->  buildCopy (document + ink)  ->  new file next to the original
 
 import { createInkCanvas } from './ink/inkCanvas.js';
@@ -20,6 +21,7 @@ import { createMotion } from './motion/index.js';
 import { createToolbar } from './ui/toolbar.js';
 import { recognizeImage } from './recognize.js';
 import { createNotesController } from './notes/notesController.js';
+import { reviewNote, askTutor } from './tutor/tutorClient.js';
 import { createWhiteboard, openDocument } from './files/documents.js';
 import { createPageView } from './files/pageView.js';
 import { createExplorer } from './files/explorer.js';
@@ -47,6 +49,7 @@ const TICK_MS = 250;
 const TRANSCRIBE_IDLE_MS = 2000;
 const AUTO_KEY = 'notechalant.autoTranscribe';
 const NOTES_SHOWN_KEY = 'notechalant.notesShown';
+const TUTOR_KEY = 'notechalant.tutor';
 
 const canvas = document.getElementById('ink');
 const ink = createInkCanvas(canvas);
@@ -144,6 +147,7 @@ const notes = createNotesController({
   },
   goToPage: goToPage,
   recognize: recognizeImage,
+  tutor: { review: reviewNote, ask: askTutor },
   idleMs: TRANSCRIBE_IDLE_MS,
   onStatus: function (text, isError) {
     toolbar.setStatus(text, isError);
@@ -157,6 +161,16 @@ function showNotes(isShown) {
   document.body.classList.toggle('notes-hidden', !isShown);
   toolbar.setNotesShown(isShown);
   saveSetting(NOTES_SHOWN_KEY, isShown ? 'on' : 'off');
+}
+
+// Tutor feedback shows in the notes panel, so turning the tutor on opens the panel too.
+function setTutor(isOn) {
+  notes.setTutor(isOn);
+  toolbar.setTutorOn(isOn);
+  saveSetting(TUTOR_KEY, isOn ? 'on' : 'off');
+  if (isOn) {
+    showNotes(true);
+  }
 }
 
 // Copies the canvas strokes into the active tab if they changed since last time.
@@ -605,6 +619,12 @@ const toolbar = createToolbar({
     showNotes(document.body.classList.contains('notes-hidden'));
   },
 
+  onToggleTutor: function () {
+    const isOn = toolbar.buttons.tutor.getAttribute('aria-pressed') !== 'true';
+    setTutor(isOn);
+    toolbar.setStatus(isOn ? 'Tutor on. New writing gets checked, and you can ask about any note' : 'Tutor off');
+  },
+
   // The relay keeps reconnecting on its own, so it only ends when the button is clicked again.
   onRelay: async function () {
     if (active !== null && active.name === 'relay') {
@@ -822,6 +842,9 @@ const autoOn = loadSetting(AUTO_KEY) !== 'off';
 toolbar.setAuto(autoOn);
 notes.setAuto(autoOn);
 showNotes(loadSetting(NOTES_SHOWN_KEY) !== 'off');
+if (loadSetting(TUTOR_KEY) === 'on') {
+  setTutor(true);
+}
 ink.centerCursor();
 ink.hideCursor();
 
