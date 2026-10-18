@@ -32,6 +32,8 @@ export function createInkCanvas(canvas, options) {
   let shownTextVersion = -1;
   // Handwriting fading out after clean up: { strokes, start }.
   let fading = [];
+  // Shape snapping (ink/shapes.js) or null. Takes a finished stroke, returns { stroke } or null.
+  let snap = null;
 
   function inkChanged() {
     revision++;
@@ -59,7 +61,18 @@ export function createInkCanvas(canvas, options) {
     }
     strokes.push(current);
     undoStack.push({ type: 'stroke' });
+    const snapped = snap === null ? null : snap(current);
+    if (snapped !== null) {
+      // The first Undo puts the stroke back as drawn, the next removes it.
+      strokes[strokes.length - 1] = snapped.stroke;
+      undoStack.push({ type: 'snap', stroke: snapped.stroke, original: current });
+      inkChanged();
+    }
     current = null;
+  }
+
+  function setSnap(fn) {
+    snap = fn;
   }
 
   // Absolute positioning, used by the mouse and by moveBy.
@@ -130,6 +143,12 @@ export function createInkCanvas(canvas, options) {
     } else if (action.type === 'clear') {
       strokes = action.strokes;
       textVersion++;
+    } else if (action.type === 'snap') {
+      const index = strokes.indexOf(action.stroke);
+      if (index === -1) {
+        return null;
+      }
+      strokes[index] = action.original;
     } else if (action.type === 'cleanup') {
       const index = strokes.indexOf(action.item);
       if (index === -1) {
@@ -286,6 +305,7 @@ export function createInkCanvas(canvas, options) {
     undo,
     clear,
     replaceWithText,
+    setSnap,
     setColor,
     setWidth,
     getStrokes,

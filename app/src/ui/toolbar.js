@@ -18,6 +18,7 @@ export function createToolbar(handlers) {
   const fileInput = document.getElementById('recording-file');
   const autoInput = document.getElementById('auto-transcribe');
   const autoCleanUpInput = document.getElementById('auto-cleanup');
+  const snapInput = document.getElementById('snap-shapes');
   const relayIndicators = document.getElementById('relay-indicators');
   const relayIndicator = document.getElementById('relay-indicator');
   const penIndicator = document.getElementById('pen-indicator');
@@ -105,6 +106,9 @@ export function createToolbar(handlers) {
   buttons.saveCopy.addEventListener('click', handlers.onSaveCopy);
   buttons.transcribe.addEventListener('click', handlers.onTranscribe);
   buttons.notes.addEventListener('click', handlers.onToggleNotes);
+  snapInput.addEventListener('change', function () {
+    handlers.onSnapChange(snapInput.checked);
+  });
   autoCleanUpInput.addEventListener('change', function () {
     handlers.onAutoCleanUpChange(autoCleanUpInput.checked);
   });
@@ -185,6 +189,10 @@ export function createToolbar(handlers) {
     setLabel(buttons.saveCopy, isBusy ? 'Saving…' : 'Save copy');
   }
 
+  function setSnap(isOn) {
+    snapInput.checked = isOn;
+  }
+
   function setAutoCleanUp(isOn) {
     autoCleanUpInput.checked = isOn;
   }
@@ -214,6 +222,7 @@ export function createToolbar(handlers) {
     setSavingCopy,
     setAuto,
     setAutoCleanUp,
+    setSnap,
     setNotesShown,
     setRemoteOn,
     nextColor,

@@ -10,6 +10,7 @@
 
 import { createInkCanvas } from './ink/inkCanvas.js';
 import { createTextLayer } from './ink/textLayer.js';
+import { snapStroke } from './ink/shapes.js';
 import { makeTextItem, strokesSignature, sameSignature, handwritingPages } from './ink/inkItems.js';
 import { attachMouse } from './input/mouse.js';
 import { createInputHub } from './input/hub.js';
@@ -52,6 +53,7 @@ const TICK_MS = 250;
 const TRANSCRIBE_IDLE_MS = 2000;
 const AUTO_KEY = 'notechalant.autoTranscribe';
 const AUTO_CLEANUP_KEY = 'notechalant.autoCleanUp';
+const SNAP_KEY = 'notechalant.snapShapes';
 const NOTES_SHOWN_KEY = 'notechalant.notesShown';
 
 const canvas = document.getElementById('ink');
@@ -676,6 +678,12 @@ const toolbar = createToolbar({
     notes.transcribeNow();
   },
 
+  onSnapChange: function (isOn) {
+    ink.setSnap(isOn ? snapStroke : null);
+    saveSetting(SNAP_KEY, isOn ? 'on' : 'off');
+    toolbar.setStatus(isOn ? 'Snap on: rough lines, circles, and boxes come out clean' : 'Snap off');
+  },
+
   onAutoCleanUpChange: function (isOn) {
     notes.setAutoCleanUp(isOn);
     saveSetting(AUTO_CLEANUP_KEY, isOn ? 'on' : 'off');
@@ -1031,6 +1039,9 @@ activate(whiteboard);
 const autoOn = loadSetting(AUTO_KEY) !== 'off';
 toolbar.setAuto(autoOn);
 notes.setAuto(autoOn);
+const snapOn = loadSetting(SNAP_KEY) !== 'off';
+toolbar.setSnap(snapOn);
+ink.setSnap(snapOn ? snapStroke : null);
 const autoCleanUpOn = loadSetting(AUTO_CLEANUP_KEY) === 'on';
 toolbar.setAutoCleanUp(autoCleanUpOn);
 notes.setAutoCleanUp(autoCleanUpOn);
