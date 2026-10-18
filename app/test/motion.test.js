@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createMotion, sanitizeConfig, DEFAULT_CONFIG } from '../src/motion/index.js';
+import { createMotion, sanitizeConfig, accelerationGain, DEFAULT_CONFIG } from '../src/motion/index.js';
 
 // Feeds `seconds` of 100 Hz samples, each built by rates(i), and returns every update result.
 function run(motion, seconds, rates, startT) {
@@ -71,7 +71,7 @@ test('calibration starts over if the pen moves, so movement never becomes the bi
 });
 
 test('direction vectors and sensitivity are read live from config', function () {
-  const motion = createMotion({ rollCompensation: false, calibrationMs: 0, xVector: [1, 0, 0], yVector: [0, 0, 1], pixelsPerDegree: 10 });
+  const motion = createMotion({ rollCompensation: false, acceleration: 0, calibrationMs: 0, xVector: [1, 0, 0], yVector: [0, 0, 1], pixelsPerDegree: 10 });
   // 10 deg/s on gx for one second at 10 px per degree is 100 px.
   let moved = total(run(motion, 1.01, function () {
     return { gx: 10, gz: 5 };
@@ -88,7 +88,7 @@ test('direction vectors and sensitivity are read live from config', function () 
 });
 
 test('deadzone ignores tremor and starts from zero speed above it', function () {
-  const motion = createMotion({ rollCompensation: false, calibrationMs: 0, deadzone: 2, xVector: [0, 0, 1], yVector: [0, 1, 0] });
+  const motion = createMotion({ rollCompensation: false, acceleration: 0, calibrationMs: 0, deadzone: 2, xVector: [0, 0, 1], yVector: [0, 1, 0] });
   const tremor = total(run(motion, 1, function (i) {
     return { gz: i % 2 === 0 ? 1.5 : -1.5, gy: 1 };
   }, 0));
@@ -96,7 +96,7 @@ test('deadzone ignores tremor and starts from zero speed above it', function () 
   assert.equal(tremor.dy, 0);
 
   // 12 deg/s with a 2 deg/s deadzone moves like 10 deg/s, at 12 px per degree.
-  const motion2 = createMotion({ rollCompensation: false, calibrationMs: 0, deadzone: 2, xVector: [0, 0, 1], yVector: [0, 1, 0] });
+  const motion2 = createMotion({ rollCompensation: false, acceleration: 0, calibrationMs: 0, deadzone: 2, xVector: [0, 0, 1], yVector: [0, 1, 0] });
   const moved = total(run(motion2, 1.01, function () {
     return { gz: 12 };
   }, 0));
@@ -140,7 +140,7 @@ function still() {
 }
 
 test('axis wizard measures a tilted sensor: still, then a line right, then a line down', function () {
-  const motion = createMotion({ rollCompensation: false, xVector: [0, 0, 1], yVector: [0, -1, 0] });
+  const motion = createMotion({ rollCompensation: false, acceleration: 0, xVector: [0, 0, 1], yVector: [0, -1, 0] });
   const messages = [];
   motion.startAxisWizard(function (m) {
     messages.push(m);
@@ -298,6 +298,47 @@ test('the axis wizard learns which way the pen points and the left-right sign', 
   runPen(motion, 3, penSamples(other, [0, 0, 0], 0), 6040);
   const down = runPen(motion, 1, penSamples(other, other.turnDown, 20), 9040);
   assert.ok(Math.abs(down.dy - 240) < 3 && Math.abs(down.dx) < 3, 'down after re-roll ' + JSON.stringify(down));
+});
+
+test('acceleration: slow aiming is finer, fast moves go further, writing speed is unchanged', function () {
+  assert.equal(accelerationGain(20, 0.5, 20), 1);
+  assert.ok(Math.abs(accelerationGain(5, 0.5, 20) - 0.5) < 1e-9);
+  assert.ok(Math.abs(accelerationGain(80, 0.5, 20) - 2) < 1e-9);
+  assert.equal(accelerationGain(0, 0.5, 20), 0, 'no speed, no movement');
+  assert.equal(accelerationGain(5000, 1, 20), 4, 'capped');
+  assert.equal(accelerationGain(5, 0, 20), 1, 'off means constant gain');
+
+  // Through the motion module: the same 10 degree turn, slow and fast.
+  function turn(degPerSec) {
+    const motion = createMotion({ rollCompensation: false, calibrationMs: 0, xVector: [0, 0, 1], yVector: [0, 1, 0] });
+    const seconds = 10 / degPerSec;
+    return total(run(motion, seconds + 0.01, function () { return { gz: degPerSec }; }, 0)).dx;
+  }
+  assert.ok(Math.abs(turn(20) - 120) < 1, 'writing speed: 10 deg at 12 px/deg');
+  assert.ok(turn(5) < 70, 'slow: finer, ' + turn(5));
+  assert.ok(turn(80) > 200, 'fast: further, ' + turn(80));
+});
+
+test('the cursor moves slower while drawing than while moving to a spot', function () {
+  const config = { rollCompensation: false, acceleration: 0, calibrationMs: 0, xVector: [0, 0, 1], yVector: [0, 1, 0] };
+  function moved(penDown) {
+    const motion = createMotion(config);
+    let dx = 0;
+    for (let i = 0; i <= 100; i++) {
+      dx += motion.update({ t: i * 10, gx: 0, gy: 0, gz: 10, ax: 0, ay: 0, az: 1, pen: 0 }, penDown).dx;
+    }
+    return dx;
+  }
+  assert.ok(Math.abs(moved(undefined) - 120) < 1e-6, 'no pen state given: plain gain');
+  assert.ok(Math.abs(moved(true) - 120 * DEFAULT_CONFIG.drawingGain) < 1e-6);
+  // Acceleration is ignored while drawing, so a slow stroke keeps its proportions.
+  const accelerated = createMotion(Object.assign({}, config, { acceleration: 1 }));
+  let slowDx = 0;
+  for (let i = 0; i <= 100; i++) {
+    slowDx += accelerated.update({ t: i * 10, gx: 0, gy: 0, gz: 2, ax: 0, ay: 0, az: 1, pen: 1 }, true).dx;
+  }
+  assert.ok(Math.abs(slowDx - 24 * DEFAULT_CONFIG.drawingGain) < 1e-6, 'slow drawing not shrunk, ' + slowDx);
+  assert.ok(Math.abs(moved(false) - 120 * DEFAULT_CONFIG.travelGain) < 1e-6);
 });
 
 test('sanitizeConfig keeps good saved values and drops bad ones', function () {

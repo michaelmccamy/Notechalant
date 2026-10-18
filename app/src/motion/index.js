@@ -2,7 +2,7 @@
 // the app keeps working. See motion/README.md for the contract.
 //
 // Per sample: gyro rates -> subtract bias -> screen directions -> One Euro filter ->
-// deadzone -> pixels. The bias is the average of the first calibrationMs of samples, while the
+// deadzone -> acceleration curve -> pen up or down gain -> pixels. The bias is the average of the first calibrationMs of samples, while the
 // user holds the pen still. Every setting is read from `config` on each sample, so the debug
 // panel (D key) can change them live.
 //
@@ -31,6 +31,15 @@ export const DEFAULT_CONFIG = {
   smoothing: 0, // 0 is off, 1 is heaviest. Sets the One Euro filter's minimum cutoff
   smoothingBeta: 0.02, // how quickly the filter opens up for fast movement
   deadzone: 0, // degrees per second of rotation ignored as hand tremor
+  // Pointer acceleration while the pen is up, 0 (off) to 1. Gain scales with
+  // (speed / accelerationMidDps) to this power: slow aiming gets finer and fast moves get
+  // bigger. Never while drawing, where it would shrink slow strokes more than fast ones
+  // (an H's crossbar came out half size) and bend letters out of shape.
+  acceleration: 0.5,
+  accelerationMidDps: 20, // writing speed on the real pen, where the gain is pixelsPerDegree
+  // Multipliers on top while the pen is down (writing) and up (moving to a spot).
+  drawingGain: 0.8,
+  travelGain: 1.3,
   calibrationMs: 2000, // how long to average the gyro for bias after a reset
   maxGapMs: 50, // ignore time gaps longer than this so a dropped packet can't fling the cursor
 };
@@ -94,6 +103,18 @@ const GRAVITY_MAX_G = 1.2;
 // When the pen points almost straight up or down, the sideways axis is undefined. Below this,
 // up and down falls back to the fixed vector.
 const MIN_SIDEWAYS = 0.2;
+
+// Acceleration never multiplies the gain by more than this, so a flick can't throw the
+// cursor off the page.
+const MAX_ACCELERATION_GAIN = 4;
+
+// The acceleration curve on its own, for the debug panel and tests.
+export function accelerationGain(speedDps, acceleration, midDps) {
+  if (acceleration <= 0 || speedDps <= 0) {
+    return acceleration <= 0 ? 1 : 0;
+  }
+  return Math.min(MAX_ACCELERATION_GAIN, Math.pow(speedDps / midDps, acceleration));
+}
 
 function dot(a, b) {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -198,7 +219,8 @@ export function createMotion(overrides) {
 
   // Takes one sample, returns how far to move the cursor in pixels.
   // ready is false while calibrating, and the app ignores movement until it's true.
-  function update(sample) {
+  // penDown (optional) says whether the app is drawing, which picks drawingGain or travelGain.
+  function update(sample, penDown) {
     if (bias === null) {
       if (config.calibrationMs <= 0) {
         bias = { gx: 0, gy: 0, gz: 0 };
@@ -249,9 +271,18 @@ export function createMotion(overrides) {
       rateY *= scale;
     }
 
+    let gain = config.pixelsPerDegree;
+    if (penDown === true) {
+      gain *= config.drawingGain;
+    } else {
+      gain *= accelerationGain(Math.hypot(rateX, rateY), config.acceleration, config.accelerationMidDps);
+      if (penDown === false) {
+        gain *= config.travelGain;
+      }
+    }
     return {
-      dx: rateX * dt * config.pixelsPerDegree,
-      dy: rateY * dt * config.pixelsPerDegree,
+      dx: rateX * dt * gain,
+      dy: rateY * dt * gain,
       ready: true,
     };
   }

@@ -91,8 +91,8 @@ export function createDebugPanel(motion, ink, handlers) {
 
   // What the input hub calls instead of the motion module. Same shape, plus a tap.
   const tapped = {
-    update: function (sample) {
-      const movement = motion.update(sample);
+    update: function (sample, penDown) {
+      const movement = motion.update(sample, penDown);
       onSample(sample, movement);
       return movement;
     },

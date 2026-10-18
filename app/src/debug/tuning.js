@@ -12,7 +12,7 @@ import { DEFAULT_CONFIG, sanitizeConfig, smoothingToCutoff } from '../motion/ind
 const STORAGE_KEY = 'notechalant.motion';
 // Only the knobs on the panel are saved, so a later change to another default
 // (calibration time, say) isn't hidden by an old saved value.
-const TUNED_KEYS = ['pixelsPerDegree', 'rollCompensation', 'penAxis', 'horizontalSign', 'xVector', 'yVector', 'smoothing', 'deadzone'];
+const TUNED_KEYS = ['pixelsPerDegree', 'acceleration', 'drawingGain', 'travelGain', 'rollCompensation', 'penAxis', 'horizontalSign', 'xVector', 'yVector', 'smoothing', 'deadzone'];
 const AXIS_NAMES = ['gx', 'gy', 'gz'];
 
 export function loadMotionSettings() {
@@ -72,6 +72,9 @@ export function createTuningControls(motion, handlers) {
     pixelsPerDegree: document.getElementById('tune-sensitivity'),
     smoothing: document.getElementById('tune-smoothing'),
     deadzone: document.getElementById('tune-deadzone'),
+    acceleration: document.getElementById('tune-acceleration'),
+    drawingGain: document.getElementById('tune-drawing'),
+    travelGain: document.getElementById('tune-travel'),
   };
   // One dropdown and one Invert checkbox per screen direction.
   const directions = {
@@ -83,6 +86,9 @@ export function createTuningControls(motion, handlers) {
     pixelsPerDegree: document.getElementById('tune-sensitivity-value'),
     smoothing: document.getElementById('tune-smoothing-value'),
     deadzone: document.getElementById('tune-deadzone-value'),
+    acceleration: document.getElementById('tune-acceleration-value'),
+    drawingGain: document.getElementById('tune-drawing-value'),
+    travelGain: document.getElementById('tune-travel-value'),
   };
 
   Object.assign(config, loadMotionSettings());
@@ -105,6 +111,9 @@ export function createTuningControls(motion, handlers) {
     outputs.smoothing.textContent =
       config.smoothing > 0 ? config.smoothing.toFixed(2) + ' (' + smoothingToCutoff(config.smoothing).toFixed(1) + ' Hz)' : 'off';
     outputs.deadzone.textContent = config.deadzone > 0 ? config.deadzone.toFixed(1) + ' °/s' : 'off';
+    outputs.acceleration.textContent = config.acceleration > 0 ? config.acceleration.toFixed(2) : 'off';
+    outputs.drawingGain.textContent = '×' + config.drawingGain.toFixed(2);
+    outputs.travelGain.textContent = '×' + config.travelGain.toFixed(2);
   }
 
   function changed() {

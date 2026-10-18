@@ -8,11 +8,12 @@ export function createInputHub({ ink, motion }) {
 
   function onPenData(sample) {
     lastSampleAt = performance.now();
-    const movement = motion.update(sample);
+    const penDown = sample.pen === 1 || spacebarDown;
+    // The motion module moves the cursor a little slower while drawing than while travelling.
+    const movement = motion.update(sample, penDown);
     if (!movement.ready) {
       return;
     }
-    const penDown = sample.pen === 1 || spacebarDown;
     ink.moveBy(movement.dx, movement.dy, penDown);
   }
 

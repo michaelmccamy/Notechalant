@@ -222,6 +222,24 @@
           <output id="tune-deadzone-value"></output>
         </label>
         <input id="tune-deadzone" type="range" min="0" max="10" step="0.1" />
+
+        <label class="tuning-row" for="tune-acceleration" title="With the pen up: slow moves get finer for aiming, fast moves go further. Never while drawing">
+          <span>Aiming acceleration</span>
+          <output id="tune-acceleration-value"></output>
+        </label>
+        <input id="tune-acceleration" type="range" min="0" max="1" step="0.05" />
+
+        <label class="tuning-row" for="tune-drawing" title="Speed while the pen is down, relative to Sensitivity">
+          <span>Drawing speed</span>
+          <output id="tune-drawing-value"></output>
+        </label>
+        <input id="tune-drawing" type="range" min="0.3" max="1.5" step="0.05" />
+
+        <label class="tuning-row" for="tune-travel" title="Speed while the pen is up, relative to Sensitivity">
+          <span>Travel speed</span>
+          <output id="tune-travel-value"></output>
+        </label>
+        <input id="tune-travel" type="range" min="0.5" max="3" step="0.05" />
       </section>
 
       <div class="tuning-actions">
