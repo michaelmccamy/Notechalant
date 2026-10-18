@@ -166,6 +166,47 @@ export function removeBlock(notes, id) {
   notes.blocks = notes.blocks.filter((block) => block.id !== id);
 }
 
+// The eraser removed strokes at `indices` (positions before removal, ascending). Transcribed
+// strokes are always the first ones on the page, so the count drops by how many of those went,
+// and blocks' stroke positions shift down past the gaps. Returns which ones were transcribed,
+// for strokesRestored if the erase is undone.
+export function strokesErased(notes, page, indices) {
+  const count = notes.transcribed[page] || 0;
+  const wasTranscribed = indices.map((i) => i < count);
+  notes.transcribed[page] = count - wasTranscribed.filter(Boolean).length;
+  for (const block of notes.blocks) {
+    if (block.page === page && block.strokes) {
+      block.strokes = block.strokes
+        .filter((i) => !indices.includes(i))
+        .map((i) => i - indices.filter((r) => r < i).length);
+    }
+  }
+  return wasTranscribed;
+}
+
+// Undo of an erase put strokes back at `indices` (ascending). The reverse of strokesErased,
+// except the strokes don't rejoin their blocks.
+export function strokesRestored(notes, page, indices, wasTranscribed) {
+  let count = notes.transcribed[page] || 0;
+  indices.forEach(function (index, k) {
+    for (const block of notes.blocks) {
+      if (block.page === page && block.strokes) {
+        block.strokes = block.strokes.map((i) => (i >= index ? i + 1 : i));
+      }
+    }
+    if (wasTranscribed && wasTranscribed[k]) {
+      count++;
+    }
+  });
+  notes.transcribed[page] = count;
+}
+
+// Removes every block but keeps what was transcribed, so the ink still on the page isn't read
+// back into notes right after.
+export function clearBlocks(notes) {
+  notes.blocks = [];
+}
+
 // Reading order: by page, then in the order they were written.
 export function orderedBlocks(notes) {
   return notes.blocks.slice().sort((a, b) => a.page - b.page || a.createdAt - b.createdAt);

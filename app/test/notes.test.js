@@ -10,6 +10,9 @@ import {
   addBlock,
   editBlock,
   removeBlock,
+  clearBlocks,
+  strokesErased,
+  strokesRestored,
   orderedBlocks,
   contextTail,
   toMarkdown,
@@ -188,4 +191,29 @@ test('cleanTranscription strips code fences and the nothing marker', function ()
   assert.equal(cleanTranscription('  hi  '), 'hi');
   assert.equal(cleanTranscription('(nothing recognized)'), '');
   assert.equal(cleanTranscription(undefined), '');
+});
+
+test('clearing notes keeps what was transcribed', function () {
+  const notes = emptyNotes();
+  addBlock(notes, 'Glycolysis', 0, 1);
+  addBlock(notes, 'Krebs cycle', 1, 2);
+  markTranscribed(notes, 0, 3, 3);
+  clearBlocks(notes);
+  assert.deepEqual(notes.blocks, []);
+  assert.equal(notes.transcribed[0], 3);
+});
+
+test('erasing strokes keeps the transcribed count and block strokes lined up', function () {
+  const notes = emptyNotes();
+  // Strokes 0-4 are transcribed; 5 and 6 aren't yet.
+  markTranscribed(notes, 0, 5, 7);
+  const block = addBlock(notes, 'HI', 0, 1, { box: null, strokes: [2, 3, 4] });
+  const was = strokesErased(notes, 0, [1, 3, 5]);
+  assert.deepEqual(was, [true, true, false]);
+  assert.equal(notes.transcribed[0], 3);
+  // Old 2 and 4 are now at 1 and 2.
+  assert.deepEqual(block.strokes, [1, 2]);
+  strokesRestored(notes, 0, [1, 3, 5], was);
+  assert.equal(notes.transcribed[0], 5);
+  assert.deepEqual(block.strokes, [2, 4]);
 });

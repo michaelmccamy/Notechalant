@@ -84,6 +84,9 @@
             <input id="snap-shapes" type="checkbox" checked />
             Snap
           </label>
+          <button id="eraser" class="btn icon-only" title="Eraser: drag over strokes to remove them. Click again, or pick a color, to write (E)" aria-label="Eraser" aria-pressed="false">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7 21-4.3-4.3a1 1 0 0 1 0-1.4l10-10a1 1 0 0 1 1.4 0l5.6 5.6a1 1 0 0 1 0 1.4L11 21" /><path d="M22 21H7" /><path d="m5 11 9 9" /></svg>
+          </button>
 
           <button id="undo" class="btn icon-only" title="Undo (Ctrl+Z)" aria-label="Undo">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
@@ -183,6 +186,7 @@
           <span class="explorer-label">Notes</span>
           <button id="notes-copy" class="head-button" title="Copy these notes as Markdown">Copy</button>
           <button id="notes-export" class="head-button" title="Download these notes as a Markdown file">Export .md</button>
+          <button id="notes-clear" class="head-button" title="Delete every note for this file. The ink stays on the page">Clear</button>
         </div>
         <div class="notes-file" id="notes-file"></div>
         <div class="notes-blocks" id="notes-blocks" aria-live="polite"></div>
