@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { snapStroke } from '../src/ink/shapes.js';
+import { snapStroke, isClosedLoop } from '../src/ink/shapes.js';
 
 // Seeded wobble, so a "hand drawn" stroke is the same every run.
 let seed = 7;
@@ -96,4 +96,21 @@ test('letters, open curves, and tiny strokes are left alone', function () {
   assert.equal(snapStroke(stroke(c)), null, 'C');
   assert.equal(snapStroke(handLine(0, 0, 10, 12, 0.5)), null, 'too small');
   assert.equal(snapStroke(stroke([[0, 0], [50, 50]])), null, 'too few points');
+});
+
+test('circle to ask: a loose loop around something counts, a written o or a line does not', function () {
+  // A lopsided, shaky loop that doesn't close exactly, like a quick circle around an equation.
+  const loose = handEllipse(300, 200, 180, 70, 12);
+  loose.points.pop();
+  loose.points.pop();
+  assert.equal(isClosedLoop(loose.points), true);
+  assert.equal(isClosedLoop(handBox(100, 100, 300, 150, 6).points), true, 'a box around something');
+  assert.equal(isClosedLoop(handEllipse(100, 100, 20, 25, 1).points), false, 'a written o is too small');
+  assert.equal(isClosedLoop(handLine(0, 0, 300, 200, 3).points), false, 'a line');
+  const c = [];
+  for (let i = 0; i <= 30; i++) {
+    const a = Math.PI / 4 + (i / 30) * Math.PI * 1.5;
+    c.push({ x: 200 + Math.cos(a) * 100, y: 200 + Math.sin(a) * 100 });
+  }
+  assert.equal(isClosedLoop(c), false, 'an open C');
 });

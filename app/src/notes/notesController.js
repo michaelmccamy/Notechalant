@@ -198,6 +198,19 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     return toMarkdown(tab.name, tab.notes || { blocks: [], transcribed: {} }, tab.doc.pageCount);
   }
 
+  // Circle to ask: an answer goes in the notes like a transcription, so Export .md becomes a
+  // study sheet.
+  async function addNote(tab, page, text) {
+    if (!tab.notes) {
+      return;
+    }
+    const block = addBlock(tab.notes, text, page);
+    await save(tab);
+    if (getActiveTab() === tab) {
+      panel.render(tab, tab.page, block.id);
+    }
+  }
+
   function setAuto(isOn) {
     auto = isOn;
   }
@@ -206,7 +219,7 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     autoCleanUp = isOn;
   }
 
-  return { attach, show, tick, transcribeNow, setAuto, setAutoCleanUp, onHandwritingRestored };
+  return { attach, show, tick, transcribeNow, addNote, setAuto, setAutoCleanUp, onHandwritingRestored };
 }
 
 // Identifies one attempt: which file, which page, how many strokes. A failed attempt isn't

@@ -1,12 +1,13 @@
 // Recognition server for local development. Owner is CpE 3.
 //
-// The browser sends the canvas as a PNG data URL to POST /api/recognize.
-// This server forwards it to Gemini and returns { text }.
+// The browser sends handwriting as a PNG data URL to POST /api/recognize, and gets { text }.
+// Circle to ask sends the circled part of the page to POST /api/explain, and gets
+// { about, text }.
 // It exists so the API key stays in server/.env and never ships in frontend code.
 // The Gemini call itself lives in recognize.mjs, shared with the Vercel function in api/.
 
 import http from 'node:http';
-import { recognize, hasConfig } from './recognize.mjs';
+import { recognize, explain, hasConfig } from './recognize.mjs';
 
 // Load server/.env if it exists (Node 20.12 or newer).
 try {
@@ -43,20 +44,25 @@ function readBody(req) {
   });
 }
 
-async function handleRecognize(req, res) {
+// handler is recognize or explain.
+async function handleImage(req, res, handler) {
   let body = null;
   try {
     body = JSON.parse(await readBody(req));
   } catch (err) {
-    // recognize() answers a missing image with a 400.
+    // The handler answers a missing image with a 400.
   }
-  const result = await recognize(body, process.env);
+  const result = await handler(body, process.env);
   sendJson(res, result.status, result.body);
 }
 
 const server = http.createServer(function (req, res) {
   if (req.method === 'POST' && req.url === '/api/recognize') {
-    handleRecognize(req, res);
+    handleImage(req, res, recognize);
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/api/explain') {
+    handleImage(req, res, explain);
     return;
   }
   if (req.method === 'GET' && req.url === '/api/health') {

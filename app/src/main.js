@@ -10,7 +10,8 @@
 
 import { createInkCanvas } from './ink/inkCanvas.js';
 import { createTextLayer } from './ink/textLayer.js';
-import { snapStroke } from './ink/shapes.js';
+import { snapStroke, strokeBox, isClosedLoop } from './ink/shapes.js';
+import { createCircleToAsk } from './ask/circleToAsk.js';
 import { makeTextItem, strokesSignature, sameSignature, handwritingPages } from './ink/inkItems.js';
 import { attachMouse } from './input/mouse.js';
 import { createInputHub } from './input/hub.js';
@@ -54,6 +55,7 @@ const TRANSCRIBE_IDLE_MS = 2000;
 const AUTO_KEY = 'notechalant.autoTranscribe';
 const AUTO_CLEANUP_KEY = 'notechalant.autoCleanUp';
 const SNAP_KEY = 'notechalant.snapShapes';
+const ASK_KEY = 'notechalant.askMode';
 const NOTES_SHOWN_KEY = 'notechalant.notesShown';
 
 const canvas = document.getElementById('ink');
@@ -205,6 +207,39 @@ const notes = createNotesController({
   },
 });
 
+// Circle to ask: with Ask on, a loop around part of the page gets it explained in a card, and
+// the answer goes in the notes. A tap (a dot) while the card is up closes it instead of drawing.
+const circleToAsk = createCircleToAsk(pageView.stage, document.getElementById('page'), {
+  onStatus: function (text, isError) {
+    toolbar.setStatus(text, isError);
+  },
+});
+let askOn = false;
+
+ink.setStrokeListener(function (stroke) {
+  const box = strokeBox(stroke.points);
+  if (circleToAsk.isOpen() && box.width < 6 && box.height < 6) {
+    ink.dropTrailingDots(1);
+    circleToAsk.dismiss();
+    return;
+  }
+  if (askOn && isClosedLoop(stroke.points)) {
+    askAbout(stroke);
+  }
+});
+
+async function askAbout(stroke) {
+  const tab = activeTab;
+  const page = tab.page;
+  tell('Asking about what you circled…');
+  const answer = await circleToAsk.ask(stroke);
+  if (answer === null) {
+    return;
+  }
+  tell('Answered. Tap the pad or press Esc to close');
+  await notes.addNote(tab, page, '### ' + (answer.about || 'Circled on page ' + (page + 1)) + '\n\n' + answer.text);
+}
+
 // Swaps the handwriting that was just read (items start..end-1 of the page) for the typed text,
 // placed in the handwriting's box. Only if that page is still on screen and still holds the
 // same strokes. If not (the user moved on, or undid them), the text just goes to the notes.
@@ -253,6 +288,8 @@ function captureInk() {
 
 // Draws the active tab's current page and puts its ink on the canvas.
 function showPage() {
+  // An answer belongs to the page it was asked on.
+  circleToAsk.dismiss();
   // Notebook lines on the whiteboard only. Real documents stay plain white. Set here rather than
   // in activate() so closing a tab that falls back to the whiteboard gets its lines too.
   document.getElementById('page').classList.toggle('whiteboard', activeTab === whiteboard);
@@ -706,6 +743,15 @@ const toolbar = createToolbar({
     notes.transcribeNow();
   },
 
+  onAskChange: function (isOn) {
+    askOn = isOn;
+    saveSetting(ASK_KEY, isOn ? 'on' : 'off');
+    if (!isOn) {
+      circleToAsk.dismiss();
+    }
+    toolbar.setStatus(isOn ? 'Ask on: circle part of the page to get it explained' : 'Ask off: circles are just ink');
+  },
+
   onSnapChange: function (isOn) {
     ink.setSnap(isOn ? snapStroke : null);
     saveSetting(SNAP_KEY, isOn ? 'on' : 'off');
@@ -1041,6 +1087,8 @@ window.addEventListener('keydown', function (event) {
     debug.toggle();
   } else if (event.key === 'p' || event.key === 'P') {
     setPresenting(!presenting);
+  } else if (event.key === 'Escape' && circleToAsk.isOpen()) {
+    circleToAsk.dismiss();
   } else if (event.key === 'Escape' && presenting) {
     setPresenting(false);
   } else if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) {
@@ -1067,6 +1115,8 @@ activate(whiteboard);
 const autoOn = loadSetting(AUTO_KEY) !== 'off';
 toolbar.setAuto(autoOn);
 notes.setAuto(autoOn);
+askOn = loadSetting(ASK_KEY) === 'on';
+toolbar.setAsk(askOn);
 const snapOn = loadSetting(SNAP_KEY) !== 'off';
 toolbar.setSnap(snapOn);
 ink.setSnap(snapOn ? snapStroke : null);

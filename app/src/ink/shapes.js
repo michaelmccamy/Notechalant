@@ -48,6 +48,30 @@ export function snapStroke(stroke) {
   return null;
 }
 
+// Circle to ask: any loop around something counts, so this is looser than the ellipse and
+// rectangle checks. A circled area is at least LOOP_MIN_SIZE across, so a written o or 0
+// doesn't ask.
+const LOOP_MIN_SIZE = 60;
+
+export function isClosedLoop(points) {
+  if (points.length < 8) {
+    return false;
+  }
+  const box = bounds(points);
+  const diagonal = Math.hypot(box.width, box.height);
+  if (Math.min(box.width, box.height) < LOOP_MIN_SIZE) {
+    return false;
+  }
+  const first = points[0];
+  const last = points[points.length - 1];
+  const gap = Math.hypot(last.x - first.x, last.y - first.y);
+  return gap / diagonal <= CLOSED_MAX_GAP && pathLength(points) / diagonal >= CLOSED_MIN_PATH;
+}
+
+export function strokeBox(points) {
+  return bounds(points);
+}
+
 function withPoints(stroke, points) {
   return { color: stroke.color, width: stroke.width, points: points };
 }

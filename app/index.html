@@ -72,6 +72,10 @@
         <header class="toolbar">
           <div class="group" id="colors" role="group" aria-label="Pen color"></div>
           <button id="pen-size" class="btn icon-only size-button"></button>
+          <label class="toggle" title="Circle part of the page to get it explained. Off: circles are just ink">
+            <input id="ask-mode" type="checkbox" />
+            Ask
+          </label>
           <label class="toggle" title="When you lift the pen, turn a rough line, circle, or box into a clean one. Undo brings back what you drew">
             <input id="snap-shapes" type="checkbox" checked />
             Snap
@@ -121,6 +125,13 @@
             <canvas id="ink"></canvas>
             <canvas id="debug-trail" hidden></canvas>
           </div>
+          <aside class="ask-card" id="ask-card" aria-live="polite" hidden>
+            <div class="ask-head">
+              <div class="ask-title" id="ask-title"></div>
+              <button id="ask-close" class="icon-button" title="Close (Esc, or tap the pad)" aria-label="Close">×</button>
+            </div>
+            <div class="ask-body" id="ask-body"></div>
+          </aside>
           <div class="calibrating" id="calibrating" role="status" aria-live="polite" hidden>
             <div class="calibrating-title">Hold the pen still</div>
             <div class="calibrating-text" id="calibrating-text">Measuring the gyro. About 2 seconds</div>

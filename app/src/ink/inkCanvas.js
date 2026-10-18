@@ -34,6 +34,8 @@ export function createInkCanvas(canvas, options) {
   let fading = [];
   // Shape snapping (ink/shapes.js) or null. Takes a finished stroke, returns { stroke } or null.
   let snap = null;
+  // Called with each finished stroke, after snapping. Circle to ask listens here.
+  let onStrokeFinished = null;
 
   function inkChanged() {
     revision++;
@@ -68,7 +70,15 @@ export function createInkCanvas(canvas, options) {
       undoStack.push({ type: 'snap', stroke: snapped.stroke, original: current });
       inkChanged();
     }
+    const finished = strokes[strokes.length - 1];
     current = null;
+    if (onStrokeFinished !== null) {
+      onStrokeFinished(finished);
+    }
+  }
+
+  function setStrokeListener(fn) {
+    onStrokeFinished = fn;
   }
 
   function setSnap(fn) {
@@ -345,6 +355,7 @@ export function createInkCanvas(canvas, options) {
     clear,
     replaceWithText,
     setSnap,
+    setStrokeListener,
     setColor,
     setWidth,
     getStrokes,
