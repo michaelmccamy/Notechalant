@@ -1,12 +1,14 @@
 // A file's notes, as plain data. No DOM or storage in here, so it all runs under `npm test`.
 //
-//   { blocks: [{ id, text, page, createdAt, tutor? }], transcribed: { pageIndex: strokeCount } }
+//   { blocks: [{ id, text, page, createdAt, tutor?, sketch?, asked? }], transcribed: { pageIndex: strokeCount } }
 //
 // Ink stays on the page after it's transcribed. `transcribed[page]` counts how many of that
 // page's strokes (oldest first) have been sent already, so only newer strokes go next time.
-// `tutor` is the tutor's feedback on a block, if any (see tutor/tutorData.js).
+// In tutor mode a block can also have `tutor` (the tutor's feedback, see tutor/tutorData.js),
+// `sketch` (a thumbnail of the drawing, for drawings with no words, whose text is ''), and
+// `asked` (a question typed about the page, rather than handwriting).
 
-import { packTutor, unpackTutor } from '../tutor/tutorData.js';
+import { packTutor, unpackTutor, validSketch } from '../tutor/tutorData.js';
 
 export function emptyNotes() {
   return { blocks: [], transcribed: {} };
@@ -42,15 +44,19 @@ export function addBlock(notes, text, page, now) {
   return block;
 }
 
-// Saving empty text deletes the block, so clearing a block in the editor removes it.
+// Saving empty text deletes the block, so clearing a block in the editor removes it. A drawing
+// is the exception: clearing its caption leaves the drawing.
 export function editBlock(notes, id, text) {
-  if (text.trim() === '') {
+  const block = findBlock(notes, id);
+  if (block === null) {
+    return;
+  }
+  // A drawing's caption can be cleared without losing the drawing.
+  if (text.trim() === '' && !block.sketch) {
     removeBlock(notes, id);
     return;
   }
-  for (const block of notes.blocks) {
-    if (block.id === id) block.text = text;
-  }
+  block.text = text.trim() === '' ? '' : text;
 }
 
 export function removeBlock(notes, id) {
@@ -90,7 +96,7 @@ export function toMarkdown(title, notes, pageCount) {
       lines.push('## Page ' + (block.page + 1), '');
       lastPage = block.page;
     }
-    lines.push(block.text, '');
+    lines.push(block.text === '' ? '*(drawing)*' : block.asked ? '**Q:** ' + block.text : block.text, '');
   }
   return lines.join('\n');
 }
@@ -120,8 +126,17 @@ export function unpackNotes(data) {
         if (tutor !== null) {
           block.tutor = tutor;
         }
+        const sketch = validSketch(b.sketch);
+        if (sketch !== null) {
+          block.sketch = sketch;
+        }
+        if (b.asked === true) {
+          block.asked = true;
+        }
         return block;
-      });
+      })
+      // A block needs words or a drawing to show.
+      .filter((block) => block.text !== '' || block.sketch);
   }
   if (data.transcribed && typeof data.transcribed === 'object') {
     for (const page of Object.keys(data.transcribed)) {

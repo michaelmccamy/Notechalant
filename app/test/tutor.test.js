@@ -12,8 +12,9 @@ import {
   addMessage,
   packTutor,
   unpackTutor,
+  validSketch,
 } from '../src/tutor/tutorData.js';
-import { emptyNotes, addBlock, packNotes, unpackNotes, contextBefore, findBlock } from '../src/notes/noteData.js';
+import { emptyNotes, addBlock, editBlock, packNotes, unpackNotes, contextBefore, findBlock, toMarkdown } from '../src/notes/noteData.js';
 import { tutor } from '../../server/tutor.mjs';
 
 const MATH_ISSUE = { kind: 'math', wrong: '$2x + 3x = 6x$', fix: '$2x + 3x = 5x$', why: 'Add the coefficients: 2 + 3 = 5.' };
@@ -111,10 +112,51 @@ test('contextBefore gives the tutor only the notes written before the block', fu
   assert.equal(findBlock(notes, 'missing'), null);
 });
 
+const SKETCH = 'data:image/png;base64,iVBORw0KGgo=';
+
+test('normalizeReview keeps explanations of the page', function () {
+  const review = normalizeReview({ verdict: 'explain', message: 'Osmosis is water moving across a membrane.' });
+  assert.equal(review.verdict, 'explain');
+  assert.deepEqual(review.issues, []);
+});
+
+test('validSketch accepts only small PNG data URLs', function () {
+  assert.equal(validSketch(SKETCH), SKETCH);
+  assert.equal(validSketch('data:image/jpeg;base64,abc'), null);
+  assert.equal(validSketch('javascript:alert(1)'), null);
+  assert.equal(validSketch('data:image/png;base64,' + 'A'.repeat(500000)), null);
+});
+
+test('a drawing is saved as a note with its picture, and a caption can be cleared', function () {
+  const notes = emptyNotes();
+  const drawing = addBlock(notes, '', 0, 1);
+  drawing.sketch = SKETCH;
+  const question = addBlock(notes, 'What does mitosis mean?', 0, 2);
+  question.asked = true;
+  addBlock(notes, '', 0, 3); // empty with no drawing: dropped on load
+
+  const loaded = unpackNotes(JSON.parse(JSON.stringify(packNotes('bio.pdf', notes))));
+  assert.equal(loaded.blocks.length, 2);
+  assert.equal(loaded.blocks[0].sketch, SKETCH);
+  assert.equal(loaded.blocks[1].asked, true);
+
+  editBlock(loaded, loaded.blocks[0].id, 'Free-body diagram');
+  assert.equal(loaded.blocks[0].text, 'Free-body diagram');
+  editBlock(loaded, loaded.blocks[0].id, '   ');
+  assert.equal(loaded.blocks[0].text, '');
+  assert.equal(loaded.blocks.length, 2);
+
+  const md = toMarkdown('bio.pdf', loaded, 1);
+  assert.ok(md.includes('*(drawing)*'));
+  assert.ok(md.includes('**Q:** What does mitosis mean?'));
+});
+
 test('the tutor server rejects requests before calling Gemini', async function () {
   const noKey = await tutor({ text: 'hi there' }, {});
   assert.equal(noKey.status, 500);
   const env = { GEMINI_API_KEY: 'test', GEMINI_MODEL: 'test' };
   assert.equal((await tutor(null, env)).status, 400);
   assert.equal((await tutor({ text: '   ' }, env)).status, 400);
+  // A sketch that isn't a PNG doesn't count as something to look at.
+  assert.equal((await tutor({ text: '', sketch: 'data:text/html;base64,PGI+' }, env)).status, 400);
 });

@@ -4,12 +4,15 @@
 //   { review, thread: [{ role: 'student' | 'tutor', text }], pending, error }
 //
 //   review    what the tutor said when the note was first written, or null:
-//             { verdict: 'issues' | 'question' | 'correct', message, issues: [{ kind, wrong, fix, why }], options }
+//             { verdict: 'issues' | 'explain' | 'question' | 'correct', message, issues: [{ kind, wrong, fix, why }], options }
+//             "explain" answers a question about the page the student is reading.
 //   thread    the back-and-forth after that, oldest first
 //   pending   true while a request is in flight (never saved)
 //   error     why the last request failed, or '' (never saved)
 
-const VERDICTS = ['issues', 'question', 'correct'];
+const VERDICTS = ['issues', 'explain', 'question', 'correct'];
+// A drawing kept with its note is a thumbnail, so saved notes stay small.
+const MAX_SKETCH_CHARS = 400000;
 const KINDS = ['grammar', 'spelling', 'math', 'fact', 'other'];
 const MAX_OPTIONS = 3;
 const MAX_ISSUES = 6;
@@ -23,6 +26,11 @@ export function emptyTutor() {
 // Whether a fresh transcription is worth sending to the tutor.
 export function worthReviewing(text) {
   return typeof text === 'string' && text.trim().length >= MIN_REVIEW_CHARS;
+}
+
+// A saved drawing thumbnail, if it's a PNG data URL of a sensible size, else null.
+export function validSketch(value) {
+  return typeof value === 'string' && value.startsWith('data:image/png;base64,') && value.length <= MAX_SKETCH_CHARS ? value : null;
 }
 
 // Checks everything the model sent. Returns null when there's nothing to show ("none", empty,
