@@ -15,7 +15,6 @@ Built at SwampHacks XII, for about $25 in parts.
 1. **Write.** Write `2x + 3 = 7` in the air. A moment after you pause, the handwriting turns into typed math on the page, and the same text appears in the Notes panel.
 2. **Circle to ask.** Turn on **Ask**, point at a problem on the slides (`data/samples/demo-slides.pdf`), and circle or underline it. A large card next to it walks through the answer.
 3. **Get a hint instead.** Turn on **Tutor** and do the same. The card gives a hint rather than the answer, and a conversation starts in Notes, where you can reply ("is it 2 and 3?") and keep going.
-4. **Start fresh.** Triple tap the pad to clear the page. Undo brings it back.
 
 ## What it does
 
@@ -80,7 +79,6 @@ If the pen drops out, the app reconnects on its own. On a Mac, Chrome needs Blue
 |---|---|
 | Finger on the pad | Pen down: draw |
 | Double tap | Recenter: the cursor jumps to where the pen points |
-| Triple tap | Clear the page (Undo brings it back) |
 
 | Key | Does |
 |---|---|

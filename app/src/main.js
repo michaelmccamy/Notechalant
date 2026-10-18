@@ -99,13 +99,6 @@ const hub = createInputHub({
     hub.recenter();
     toolbar.setStatus('Centered: the pen points at the middle of the page now');
   },
-  // Triple tap: clears the page. The double tap before it already recentered and removed two
-  // dots, so only the third is left. Undo brings the page back.
-  onTripleTap: function () {
-    ink.dropTrailingDots(1);
-    ink.clear();
-    toolbar.setStatus('Page cleared. Undo (Ctrl+Z) brings it back');
-  },
 });
 
 // While the pen is calibrating, a big card on the page says to hold still. It's easy to miss

@@ -2,12 +2,11 @@
 // The hub runs the sample through the motion module and moves the ink cursor: by an amount in
 // relative mode, or to a spot on the page in pointer mode (movement.absolute).
 // The mouse does not come through here because it already has a screen position.
-// A double tap on the pen's touch pad calls onDoubleTap (main.js recenters on it), and a triple
-// tap onTripleTap (main.js clears the page).
+// A double tap on the pen's touch pad calls onDoubleTap (main.js recenters on it).
 
 import { createDoubleTap } from './doubleTap.js';
 
-export function createInputHub({ ink, motion, onDoubleTap, onTripleTap }) {
+export function createInputHub({ ink, motion, onDoubleTap }) {
   let spacebarDown = false;
   let lastSampleAt = 0;
   const doubleTap = createDoubleTap();
@@ -26,12 +25,9 @@ export function createInputHub({ ink, motion, onDoubleTap, onTripleTap }) {
         ink.moveBy(movement.dx, movement.dy, penDown);
       }
     }
-    // After the move, so the last tap's dot is finished and the handler can remove it.
-    const taps = doubleTap.update(sample.pen, sample.t);
-    if (taps === 2 && onDoubleTap) {
+    // After the move, so the second tap's dot is finished and onDoubleTap can remove it.
+    if (doubleTap.update(sample.pen, sample.t) && onDoubleTap) {
       onDoubleTap();
-    } else if (taps === 3 && onTripleTap) {
-      onTripleTap();
     }
   }
 
