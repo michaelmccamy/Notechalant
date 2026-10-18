@@ -195,13 +195,18 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
       card.appendChild(options);
     }
 
-    for (const message of tutor.thread) {
+    // Circling or underlining sends a stock question with the picture. Only the answer is shown.
+    const hideFirst = block.asked && Boolean(block.sketch);
+    tutor.thread.forEach(function (message, index) {
+      if (hideFirst && index === 0) {
+        return;
+      }
       if (message.role === 'tutor') {
         card.appendChild(markdown('tutor-msg from-tutor', message.text));
       } else {
         card.appendChild(paragraph('tutor-msg from-student', message.text));
       }
-    }
+    });
 
     if (tutor.pending) {
       card.appendChild(paragraph('tutor-pending', review || tutor.thread.length > 0 ? 'Thinking…' : 'Tutor is reading…'));
@@ -280,9 +285,6 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     const body = document.createElement('div');
     body.className = 'note-body';
     body.title = 'Click to edit';
-    if (block.asked) {
-      body.appendChild(span('note-asked', 'You asked'));
-    }
     renderMarkdown(block.text, body);
     typeset(body, block.text, keepAtBottom);
     // A drawing with no words shows as the drawing itself, with any caption typed above it. What
@@ -301,7 +303,10 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     body.addEventListener('click', function () {
       startEditing(el, body, block);
     });
-    el.appendChild(body);
+    // A question to the tutor already shows in its thread, so it isn't repeated as a note.
+    if (!block.asked) {
+      el.appendChild(body);
+    }
 
     // In tutor mode, any note can be asked about, not just the ones the tutor spoke up on.
     if (tutorOn && !block.tutor) {

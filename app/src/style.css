@@ -1083,20 +1083,6 @@ body.notes-hidden .notes {
   background: #fff;
 }
 
-.note-asked {
-  display: inline-block;
-  margin-bottom: 2px;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--accent-strong);
-}
-
-.note-block.asked .note-body p {
-  font-style: italic;
-}
-
 /* "Ask about this page", pinned under the notes in tutor mode. */
 
 .tutor-page-ask {
