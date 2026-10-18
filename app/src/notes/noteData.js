@@ -2,8 +2,9 @@
 //
 //   { blocks: [{ id, text, page, createdAt }], transcribed: { pageIndex: strokeCount } }
 //
-// Ink stays on the page after it's transcribed. `transcribed[page]` counts how many of that
-// page's strokes (oldest first) have been sent already, so only newer strokes go next time.
+// Ink stays on the page after it's transcribed, unless clean up swaps it for typed text.
+// `transcribed[page]` counts how many of that page's ink items (oldest first) have been sent
+// already, so only newer strokes go next time. A text item from clean up counts as one item.
 
 export function emptyNotes() {
   return { blocks: [], transcribed: {} };
@@ -30,6 +31,20 @@ export function untranscribed(notes, page, strokes) {
 // Marks a page's strokes as sent, up to `count`, never past what's on the page now.
 export function markTranscribed(notes, page, count, strokesNow) {
   notes.transcribed[page] = Math.min(count, strokesNow);
+}
+
+// Clean up swapped the strokes from `start` up to the transcribed count for one text item, so
+// everything through that item is done.
+export function markCleanedUp(notes, page, start) {
+  notes.transcribed[page] = start + 1;
+}
+
+// Undo put `restored` strokes back where a text item at `index` was. If that item counted as
+// transcribed, so does the handwriting, so it isn't sent off and cleaned up a second time.
+export function handwritingRestored(notes, page, index, restored) {
+  if ((notes.transcribed[page] || 0) > index) {
+    notes.transcribed[page] += restored - 1;
+  }
 }
 
 export function addBlock(notes, text, page, now) {

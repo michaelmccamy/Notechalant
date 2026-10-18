@@ -7,6 +7,7 @@ export function createToolbar(handlers) {
   const colorsEl = document.getElementById('colors');
   const fileInput = document.getElementById('recording-file');
   const autoInput = document.getElementById('auto-transcribe');
+  const autoCleanUpInput = document.getElementById('auto-cleanup');
   const relayIndicators = document.getElementById('relay-indicators');
   const relayIndicator = document.getElementById('relay-indicator');
   const penIndicator = document.getElementById('pen-indicator');
@@ -52,6 +53,9 @@ export function createToolbar(handlers) {
   buttons.saveCopy.addEventListener('click', handlers.onSaveCopy);
   buttons.transcribe.addEventListener('click', handlers.onTranscribe);
   buttons.notes.addEventListener('click', handlers.onToggleNotes);
+  autoCleanUpInput.addEventListener('change', function () {
+    handlers.onAutoCleanUpChange(autoCleanUpInput.checked);
+  });
   autoInput.addEventListener('change', function () {
     handlers.onAutoChange(autoInput.checked);
   });
@@ -126,6 +130,10 @@ export function createToolbar(handlers) {
     buttons.saveCopy.textContent = isBusy ? 'Saving…' : 'Save copy';
   }
 
+  function setAutoCleanUp(isOn) {
+    autoCleanUpInput.checked = isOn;
+  }
+
   function setAuto(isOn) {
     autoInput.checked = isOn;
   }
@@ -135,5 +143,5 @@ export function createToolbar(handlers) {
     buttons.notes.setAttribute('aria-pressed', String(isShown));
   }
 
-  return { setStatus, setActiveSource, setRelayStatus, setBluetoothStatus, setTranscribing, setSavingCopy, setAuto, setNotesShown, buttons };
+  return { setStatus, setActiveSource, setRelayStatus, setBluetoothStatus, setTranscribing, setSavingCopy, setAuto, setAutoCleanUp, setNotesShown, buttons };
 }

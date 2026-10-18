@@ -490,6 +490,47 @@ button:disabled {
   white-space: pre;
 }
 
+/* Clean up's typed text, between the page and the ink canvas. Never takes clicks or pen input. */
+.typed-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.typed-box {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.typed-text {
+  flex: none;
+  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  line-height: 1.15;
+  white-space: nowrap;
+}
+
+.typed-text p,
+.typed-text h3,
+.typed-text h4,
+.typed-text h5,
+.typed-text ul,
+.typed-text ol {
+  margin: 0;
+}
+
+.typed-text.fade-in {
+  animation: typed-fade-in 0.5s ease-out;
+}
+
+@keyframes typed-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
 #ink {
   position: absolute;
   inset: 0;

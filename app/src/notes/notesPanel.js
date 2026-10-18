@@ -4,31 +4,7 @@
 
 import { orderedBlocks } from './noteData.js';
 import { renderMarkdown, hasMath } from './markdown.js';
-
-const MATH_OPTIONS = {
-  delimiters: [
-    { left: '$$', right: '$$', display: true },
-    { left: '\\[', right: '\\]', display: true },
-    { left: '$', right: '$', display: false },
-    { left: '\\(', right: '\\)', display: false },
-  ],
-  throwOnError: false,
-};
-
-// KaTeX (about 300 KB with fonts) loads the first time a note has math in it.
-let katexPromise = null;
-
-function loadKatex() {
-  if (katexPromise === null) {
-    katexPromise = Promise.all([import('katex/contrib/auto-render'), import('katex/dist/katex.min.css')]).then(
-      ([autoRender]) => autoRender.default,
-    );
-    katexPromise.catch(function () {
-      katexPromise = null;
-    });
-  }
-  return katexPromise;
-}
+import { loadKatex, MATH_OPTIONS } from './katex.js';
 
 export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExport }) {
   const fileEl = document.getElementById('notes-file');

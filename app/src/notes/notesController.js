@@ -1,12 +1,18 @@
 // Turns handwriting into each file's notes. In auto mode it waits for the pen to pause, sends
-// the current page's new strokes to recognition, and adds the text to that file's notes. The
-// ink stays on the page. A request that fails isn't retried until the ink changes, so a dead
-// server doesn't turn into a request every second.
+// the current page's new strokes to recognition, and adds the text to that file's notes. A
+// request that fails isn't retried until the ink changes, so a dead server doesn't turn into a
+// request every second.
+//
+// Clean up also swaps the handwriting on the page for the typed text (cleanUp, from main.js).
+// It always runs after the Transcribe button, and after a pause in writing when auto clean up
+// is on. Otherwise the ink stays as it was written.
 
 import {
   notesForExistingInk,
   untranscribed,
   markTranscribed,
+  markCleanedUp,
+  handwritingRestored,
   addBlock,
   editBlock,
   removeBlock,
@@ -16,12 +22,14 @@ import {
 } from './noteData.js';
 import { loadNotes, saveNotes } from './notesStorage.js';
 import { strokesToPng } from './strokeImage.js';
+import { strokesSignature } from '../ink/inkItems.js';
 import { createNotesPanel } from './notesPanel.js';
 
 const CONTEXT_CHARS = 400;
 
-export function createNotesController({ getActiveTab, getFolder, isWriting, lastInkChangeAt, goToPage, recognize, idleMs, onStatus, onBusyChange }) {
+export function createNotesController({ getActiveTab, getFolder, isWriting, lastInkChangeAt, goToPage, recognize, cleanUp, idleMs, onStatus, onBusyChange }) {
   let auto = true;
+  let autoCleanUp = false;
   // The tab a request is in flight for, or null.
   let busy = null;
   let failedKey = null;
@@ -81,7 +89,7 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     }
     const strokes = tab.ink[tab.page] || [];
     const ready = shouldAutoTranscribe({
-      auto: auto,
+      auto: auto || autoCleanUp,
       loaded: true,
       busy: busy !== null,
       writing: isWriting(),
@@ -93,7 +101,7 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
       idleMs: idleMs,
     });
     if (ready) {
-      run(tab, tab.page);
+      run(tab, tab.page, false);
     }
   }
 
@@ -107,13 +115,15 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
       onStatus('Nothing new to transcribe on this page');
       return;
     }
-    run(tab, tab.page);
+    run(tab, tab.page, true);
   }
 
-  async function run(tab, page) {
+  async function run(tab, page, manual) {
     const strokes = tab.ink[page] || [];
     const fresh = untranscribed(tab.notes, page, strokes);
     const sentCount = strokes.length;
+    const start = sentCount - fresh.length;
+    const signature = strokesSignature(fresh);
     const key = attemptKey(tab, page, sentCount);
 
     busy = tab;
@@ -134,14 +144,32 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     }
 
     failedKey = null;
-    markTranscribed(tab.notes, page, sentCount, (tab.ink[page] || []).length);
+    const cleaned = text !== '' && (manual || autoCleanUp) && cleanUp(tab, page, start, sentCount, signature, text);
+    if (cleaned) {
+      markCleanedUp(tab.notes, page, start);
+    } else {
+      markTranscribed(tab.notes, page, sentCount, (tab.ink[page] || []).length);
+    }
     const block = text ? addBlock(tab.notes, text, page) : null;
     finish();
     await save(tab);
     if (getActiveTab() === tab) {
       panel.render(tab, tab.page, block ? block.id : null);
     }
-    onStatus(block ? 'Added to notes' : 'No writing found, kept it as ink');
+    if (cleaned) {
+      onStatus('Cleaned up and added to notes. Undo brings the handwriting back');
+    } else {
+      onStatus(block ? 'Added to notes' : 'No writing found, kept it as ink');
+    }
+  }
+
+  // Undo of a clean up put the handwriting back. Keep it counted as transcribed.
+  function onHandwritingRestored(tab, page, index, restored) {
+    if (!tab.notes) {
+      return;
+    }
+    handwritingRestored(tab.notes, page, index, restored);
+    save(tab);
   }
 
   function finish() {
@@ -174,7 +202,11 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     auto = isOn;
   }
 
-  return { attach, show, tick, transcribeNow, setAuto };
+  function setAutoCleanUp(isOn) {
+    autoCleanUp = isOn;
+  }
+
+  return { attach, show, tick, transcribeNow, setAuto, setAutoCleanUp, onHandwritingRestored };
 }
 
 // Identifies one attempt: which file, which page, how many strokes. A failed attempt isn't

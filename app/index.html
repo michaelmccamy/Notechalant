@@ -22,6 +22,10 @@
           <input id="auto-transcribe" type="checkbox" checked />
           Auto
         </label>
+        <label class="toggle" title="When you pause, also replace the handwriting on the page with the typed text. Transcribe always does. Undo brings the handwriting back">
+          <input id="auto-cleanup" type="checkbox" />
+          Clean up
+        </label>
         <button id="toggle-notes" title="Show or hide the notes panel">Notes</button>
       </div>
 
@@ -72,6 +76,7 @@
         <div class="stage" id="stage">
           <div class="page" id="page">
             <div class="page-content" id="page-content"></div>
+            <div class="typed-layer" id="typed-layer"></div>
             <canvas id="ink"></canvas>
             <canvas id="debug-trail" hidden></canvas>
           </div>

@@ -1,5 +1,7 @@
 // Pure helpers for opening files. No DOM or file system in here, so it all runs under `npm test`.
 
+import { isText, scaleItems } from '../ink/inkItems.js';
+
 const IMAGE_EXTENSIONS = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif'];
 // Old binary Office formats and other suites. No browser renderer reads these.
 const OTHER_OFFICE_EXTENSIONS = ['doc', 'ppt', 'xls', 'odt', 'odp', 'ods', 'pages', 'key', 'numbers', 'rtf'];
@@ -93,17 +95,29 @@ export function packInk(path, pages) {
   const packed = {};
   for (const index of Object.keys(pages)) {
     if (pages[index].length === 0) continue;
-    packed[index] = pages[index].map(function (stroke) {
-      return {
-        color: stroke.color,
-        width: round(stroke.width),
-        points: stroke.points.map(function (p) {
-          return [round(p.x), round(p.y)];
-        }),
-      };
-    });
+    packed[index] = pages[index].map(packItem);
   }
   return { version: 1, file: path, pages: packed };
+}
+
+// Text items from clean up (ink/inkItems.js) keep the handwriting they replaced.
+function packItem(item) {
+  if (isText(item)) {
+    return {
+      type: 'text',
+      text: item.text,
+      color: item.color,
+      box: [round(item.box.x), round(item.box.y), round(item.box.width), round(item.box.height)],
+      strokes: item.strokes.map(packItem),
+    };
+  }
+  return {
+    color: item.color,
+    width: round(item.width),
+    points: item.points.map(function (p) {
+      return [round(p.x), round(p.y)];
+    }),
+  };
 }
 
 // Anything malformed is skipped instead of breaking the file open.
@@ -113,36 +127,47 @@ export function unpackInk(data) {
     return pages;
   }
   for (const index of Object.keys(data.pages)) {
-    const strokes = data.pages[index];
-    if (!Array.isArray(strokes)) continue;
-    pages[index] = strokes
-      .filter(function (s) {
-        return s && Array.isArray(s.points) && s.points.length > 0;
-      })
-      .map(function (s) {
-        return {
-          color: typeof s.color === 'string' ? s.color : '#1c1c1a',
-          width: Number(s.width) || 4,
-          points: s.points.map(function (p) {
-            return { x: Number(p[0]), y: Number(p[1]) };
-          }),
-        };
-      });
+    const items = data.pages[index];
+    if (!Array.isArray(items)) continue;
+    pages[index] = items.map(unpackItem).filter(function (item) {
+      return item !== null;
+    });
   }
   return pages;
 }
 
-// Converts strokes between page units (saved) and screen pixels (drawn) by a scale factor.
-export function scaleStrokes(strokes, factor) {
-  return strokes.map(function (stroke) {
+function unpackItem(s) {
+  if (!s || typeof s !== 'object') {
+    return null;
+  }
+  if (s.type === 'text') {
+    const strokes = Array.isArray(s.strokes) ? s.strokes.map(unpackItem).filter((x) => x !== null && !isText(x)) : [];
+    if (typeof s.text !== 'string' || !Array.isArray(s.box) || s.box.length !== 4 || strokes.length === 0) {
+      return null;
+    }
     return {
-      color: stroke.color,
-      width: stroke.width * factor,
-      points: stroke.points.map(function (p) {
-        return { x: p.x * factor, y: p.y * factor };
-      }),
+      type: 'text',
+      text: s.text,
+      color: typeof s.color === 'string' ? s.color : '#1c1c1a',
+      box: { x: Number(s.box[0]), y: Number(s.box[1]), width: Number(s.box[2]), height: Number(s.box[3]) },
+      strokes: strokes,
     };
-  });
+  }
+  if (!Array.isArray(s.points) || s.points.length === 0) {
+    return null;
+  }
+  return {
+    color: typeof s.color === 'string' ? s.color : '#1c1c1a',
+    width: Number(s.width) || 4,
+    points: s.points.map(function (p) {
+      return { x: Number(p[0]), y: Number(p[1]) };
+    }),
+  };
+}
+
+// Converts ink between page units (saved) and screen pixels (drawn) by a scale factor.
+export function scaleStrokes(items, factor) {
+  return scaleItems(items, factor);
 }
 
 // PDF sizes are in points (1/72 inch). Page units are CSS pixels (1/96 inch), so a letter

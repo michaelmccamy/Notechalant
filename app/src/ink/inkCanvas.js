@@ -1,12 +1,18 @@
 // Owns everything drawn on the canvas.
-// A stroke is { color, width, points: [{ x, y }] } in CSS pixels.
+// A stroke is { color, width, points: [{ x, y }] } in CSS pixels. The list can also hold text
+// items from clean up (ink/inkItems.js). The canvas skips those, and options.onTextItems gets
+// the current list whenever it changes, so a DOM layer can typeset them.
 // Inputs either set an absolute position (mouse) or move the cursor by a delta (pen hardware).
+
+import { isText } from './inkItems.js';
 
 const MIN_POINT_DISTANCE = 1.5;
 const CURSOR_RADIUS = 6;
+const FADE_MS = 500;
 
-export function createInkCanvas(canvas) {
+export function createInkCanvas(canvas, options) {
   const ctx = canvas.getContext('2d');
+  const onTextItems = (options && options.onTextItems) || function () {};
 
   let strokes = [];
   let current = null;
@@ -21,6 +27,11 @@ export function createInkCanvas(canvas) {
   let needsRender = true;
   // Goes up every time the ink changes, so callers can tell when there's something to save.
   let revision = 0;
+  // Goes up when text items may have come or gone, so the text layer only rebuilds then.
+  let textVersion = 0;
+  let shownTextVersion = -1;
+  // Handwriting fading out after clean up: { strokes, start }.
+  let fading = [];
 
   function inkChanged() {
     revision++;
@@ -105,18 +116,31 @@ export function createInkCanvas(canvas) {
     needsRender = true;
   }
 
+  // Returns what was undone, or null. Undoing a clean up returns { type: 'cleanup', index,
+  // restored }: the handwriting is back at `index`, `restored` strokes in place of one item.
   function undo() {
     finishStroke();
     const action = undoStack.pop();
     if (action === undefined) {
-      return;
+      return null;
     }
+    let result = { type: action.type };
     if (action.type === 'stroke') {
       strokes.pop();
     } else if (action.type === 'clear') {
       strokes = action.strokes;
+      textVersion++;
+    } else if (action.type === 'cleanup') {
+      const index = strokes.indexOf(action.item);
+      if (index === -1) {
+        return null;
+      }
+      strokes.splice(index, 1, ...action.strokes);
+      textVersion++;
+      result = { type: 'cleanup', index: index, restored: action.strokes.length };
     }
     inkChanged();
+    return result;
   }
 
   function clear() {
@@ -126,6 +150,17 @@ export function createInkCanvas(canvas) {
     }
     undoStack.push({ type: 'clear', strokes: strokes });
     strokes = [];
+    textVersion++;
+    inkChanged();
+  }
+
+  // Swaps strokes start..end-1 for a text item, fading the handwriting out. Undo brings it back.
+  // A stroke being drawn right now isn't in the list yet, so it carries on untouched.
+  function replaceWithText(start, end, item) {
+    const removed = strokes.splice(start, end - start, item);
+    undoStack.push({ type: 'cleanup', item: item, strokes: removed });
+    fading.push({ strokes: removed, start: performance.now() });
+    textVersion++;
     inkChanged();
   }
 
@@ -148,6 +183,8 @@ export function createInkCanvas(canvas) {
     finishStroke();
     strokes = newStrokes;
     undoStack = [];
+    fading = [];
+    textVersion++;
     needsRender = true;
   }
 
@@ -167,14 +204,31 @@ export function createInkCanvas(canvas) {
   function render() {
     ctx.clearRect(0, 0, cssWidth, cssHeight);
     for (let i = 0; i < strokes.length; i++) {
-      drawStroke(ctx, strokes[i]);
+      if (!isText(strokes[i])) {
+        drawStroke(ctx, strokes[i]);
+      }
     }
+    drawFading();
     if (current !== null) {
       drawStroke(ctx, current);
     }
     if (cursor.visible) {
       drawCursor();
     }
+  }
+
+  function drawFading() {
+    const now = performance.now();
+    fading = fading.filter(function (f) {
+      return now - f.start < FADE_MS;
+    });
+    for (const f of fading) {
+      ctx.globalAlpha = 1 - (now - f.start) / FADE_MS;
+      for (const stroke of f.strokes) {
+        drawStroke(ctx, stroke);
+      }
+    }
+    ctx.globalAlpha = 1;
   }
 
   function drawCursor() {
@@ -200,15 +254,21 @@ export function createInkCanvas(canvas) {
     outCtx.fillStyle = '#ffffff';
     outCtx.fillRect(0, 0, out.width, out.height);
     for (let i = 0; i < strokes.length; i++) {
-      drawStroke(outCtx, strokes[i]);
+      if (!isText(strokes[i])) {
+        drawStroke(outCtx, strokes[i]);
+      }
     }
     return out.toDataURL('image/png');
   }
 
   function frame() {
-    if (needsRender) {
+    if (needsRender || fading.length > 0) {
       render();
       needsRender = false;
+    }
+    if (textVersion !== shownTextVersion) {
+      shownTextVersion = textVersion;
+      onTextItems(strokes.filter(isText));
     }
     requestAnimationFrame(frame);
   }
@@ -225,6 +285,7 @@ export function createInkCanvas(canvas) {
     hideCursor,
     undo,
     clear,
+    replaceWithText,
     setColor,
     setWidth,
     getStrokes,

@@ -8,6 +8,8 @@
 //   Save copy               ->  buildCopy (document + ink)  ->  new file next to the original
 
 import { createInkCanvas } from './ink/inkCanvas.js';
+import { createTextLayer } from './ink/textLayer.js';
+import { makeTextItem, strokesSignature, sameSignature, handwritingPages } from './ink/inkItems.js';
 import { attachMouse } from './input/mouse.js';
 import { createInputHub } from './input/hub.js';
 import { parseRecording } from './input/parseSample.js';
@@ -47,10 +49,13 @@ const TICK_MS = 250;
 // How long the pen has to stay still before new writing is typed up.
 const TRANSCRIBE_IDLE_MS = 2000;
 const AUTO_KEY = 'notechalant.autoTranscribe';
+const AUTO_CLEANUP_KEY = 'notechalant.autoCleanUp';
 const NOTES_SHOWN_KEY = 'notechalant.notesShown';
 
 const canvas = document.getElementById('ink');
-const ink = createInkCanvas(canvas);
+// Clean up's typed text, drawn under the ink so new writing goes on top of it.
+const textLayer = createTextLayer(document.getElementById('typed-layer'));
+const ink = createInkCanvas(canvas, { onTextItems: textLayer.render });
 const motion = createMotion();
 // The debug panel wraps the motion module so it sees every sample from every input.
 const debug = createDebugPanel(motion, ink, {
@@ -158,6 +163,7 @@ const notes = createNotesController({
   },
   goToPage: goToPage,
   recognize: recognizeImage,
+  cleanUp: cleanUp,
   idleMs: TRANSCRIBE_IDLE_MS,
   onStatus: function (text, isError) {
     toolbar.setStatus(text, isError);
@@ -166,6 +172,34 @@ const notes = createNotesController({
     toolbar.setTranscribing(isBusy);
   },
 });
+
+// Swaps the handwriting that was just read (items start..end-1 of the page) for the typed text,
+// placed in the handwriting's box. Only if that page is still on screen and still holds the
+// same strokes. If not (the user moved on, or undid them), the text just goes to the notes.
+function cleanUp(tab, page, start, end, signature, text) {
+  if (tab !== activeTab || tab.page !== page) {
+    return false;
+  }
+  captureInk();
+  const pageItems = tab.ink[page] || [];
+  if (pageItems.length < end || !sameSignature(strokesSignature(pageItems.slice(start, end)), signature)) {
+    return false;
+  }
+  const item = makeTextItem(text, ink.getStrokes().slice(start, end));
+  item.fresh = true;
+  ink.replaceWithText(start, end, item);
+  captureInk();
+  return true;
+}
+
+// Undo, and if it brought cleaned up handwriting back, tells the notes so it isn't read again.
+function undoInk() {
+  const undone = ink.undo();
+  if (undone !== null && undone.type === 'cleanup') {
+    captureInk();
+    notes.onHandwritingRestored(activeTab, activeTab.page, undone.index, undone.restored);
+  }
+}
 
 function showNotes(isShown) {
   document.body.classList.toggle('notes-hidden', !isShown);
@@ -404,7 +438,8 @@ async function saveCopy() {
   toolbar.setSavingCopy(true);
   toolbar.setStatus('Saving a copy of ' + tab.name + '…');
   try {
-    const copy = await buildCopy(tab.doc, tab.ink, function (done, total) {
+    // Copies draw ink as vector strokes, so cleaned up text goes in as its original handwriting.
+    const copy = await buildCopy(tab.doc, handwritingPages(tab.ink), function (done, total) {
       if (total > 1) {
         toolbar.setStatus('Saving a copy of ' + tab.name + ': page ' + done + ' of ' + total + '…');
       }
@@ -591,9 +626,7 @@ const toolbar = createToolbar({
     ink.setColor(color);
   },
 
-  onUndo: function () {
-    ink.undo();
-  },
+  onUndo: undoInk,
 
   onClear: function () {
     ink.clear();
@@ -604,6 +637,12 @@ const toolbar = createToolbar({
   onTranscribe: function () {
     captureInk();
     notes.transcribeNow();
+  },
+
+  onAutoCleanUpChange: function (isOn) {
+    notes.setAutoCleanUp(isOn);
+    saveSetting(AUTO_CLEANUP_KEY, isOn ? 'on' : 'off');
+    toolbar.setStatus(isOn ? 'Clean up on: after a pause, handwriting turns into typed text' : 'Clean up off. Transcribe still cleans up');
   },
 
   onAutoChange: function (isOn) {
@@ -800,7 +839,7 @@ window.addEventListener('keydown', function (event) {
     hub.setSpacebar(true);
   } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') {
     event.preventDefault();
-    ink.undo();
+    undoInk();
   } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault();
     saveCopy();
@@ -835,6 +874,9 @@ activate(whiteboard);
 const autoOn = loadSetting(AUTO_KEY) !== 'off';
 toolbar.setAuto(autoOn);
 notes.setAuto(autoOn);
+const autoCleanUpOn = loadSetting(AUTO_CLEANUP_KEY) === 'on';
+toolbar.setAutoCleanUp(autoCleanUpOn);
+notes.setAutoCleanUp(autoCleanUpOn);
 showNotes(loadSetting(NOTES_SHOWN_KEY) !== 'off');
 ink.centerCursor();
 ink.hideCursor();
