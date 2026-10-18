@@ -50,7 +50,7 @@ function buildPrompt(context, previous) {
   }
   if (context) {
     prompt +=
-      '\n\nThe notes so far end with the text below. Use it only to resolve unclear words or symbols. Do not repeat it.\n"""\n' +
+      '\n\nThe notes so far end with the text below. Use it only to resolve unclear words or symbols. Do not repeat it, and never return any of it that is not written in the image.\n"""\n' +
       context +
       '\n"""';
   }
