@@ -16,6 +16,13 @@ export const REMOTE_BUTTONS = [
   'PRESENT',
   'EXPLORER_UP',
   'EXPLORER_DOWN',
+  'CLEANUP',
+  'ASK',
+  'TUTOR',
+  'TUTOR_OPTION_1',
+  'TUTOR_OPTION_2',
+  'CALIBRATE',
+  'AUTO',
 ];
 
 // Returns the button name, or null for anything else (boot text, unknown buttons, noise).

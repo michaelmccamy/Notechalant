@@ -33,6 +33,12 @@ Keep the UNO plugged into the laptop. In Chrome or Edge, click **Remote** in the
 | FUNC/STOP | Clear the page |
 | >\|\| | Enter or leave present mode |
 | VOL+ / VOL- | Out of present mode only: move up or down the file explorer |
+| 1 | Clean up on or off |
+| 2 | Ask on or off |
+| 3 | Tutor on or off |
+| 4 / 5 | Pick the first or second quick answer on the newest tutor question |
+| 6 | Calibrate the screen. While calibrating, 6 marks each corner, like tapping the pad |
+| 7 | Auto on or off (type up writing when you pause) |
 
 Present mode hides everything except the page you're writing on. Press **>||** again, or **P** or **Esc** on the keyboard, to leave it.
 

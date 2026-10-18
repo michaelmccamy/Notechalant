@@ -34,6 +34,13 @@ const char* buttonFor(uint8_t code) {
     case 0x09: return "PREV_TAB";       // UP arrow
     case 0x07: return "NEXT_TAB";       // DOWN arrow
     case 0x0D: return "SIZE";           // ST/REPT
+    case 0x0C: return "CLEANUP";        // 1
+    case 0x18: return "ASK";            // 2
+    case 0x5E: return "TUTOR";          // 3
+    case 0x08: return "TUTOR_OPTION_1"; // 4
+    case 0x1C: return "TUTOR_OPTION_2"; // 5
+    case 0x5A: return "CALIBRATE";      // 6
+    case 0x42: return "AUTO";           // 7
     default:   return "OTHER";
   }
 }
