@@ -52,6 +52,8 @@ export function snapStroke(stroke) {
 // rectangle checks. A circled area is at least LOOP_MIN_SIZE across, so a written o or 0
 // doesn't ask.
 const LOOP_MIN_SIZE = 60;
+// More strokes than this at once is writing, even if each one is straight (an E, a box of lines).
+const MAX_MARKS = 2;
 
 export function isClosedLoop(points) {
   if (points.length < 8) {
@@ -66,6 +68,27 @@ export function isClosedLoop(points) {
   const last = points[points.length - 1];
   const gap = Math.hypot(last.x - first.x, last.y - first.y);
   return gap / diagonal <= CLOSED_MAX_GAP && pathLength(points) / diagonal >= CLOSED_MIN_PATH;
+}
+
+// True if every stroke is a mark rather than writing: a straight line (an underline, a
+// strikethrough, a pointer line) or a loop around something. Transcription skips these, so an
+// underline doesn't go off to be read. Letters are rarely a lone straight line, and an I or a 1
+// on its own is the one thing this gets wrong.
+export function isJustMarks(strokes) {
+  if (strokes.length === 0 || strokes.length > MAX_MARKS) {
+    return false;
+  }
+  return strokes.every(function (stroke) {
+    const points = stroke.points;
+    if (!points || points.length < 2) {
+      return false;
+    }
+    const first = points[0];
+    const last = points[points.length - 1];
+    const chord = Math.hypot(last.x - first.x, last.y - first.y);
+    const straight = chord >= MIN_SIZE && chord / pathLength(points) >= LINE_MIN_DIRECTNESS && maxBow(points, first, last) / chord <= LINE_MAX_BOW;
+    return straight || isClosedLoop(points);
+  });
 }
 
 export function strokeBox(points) {

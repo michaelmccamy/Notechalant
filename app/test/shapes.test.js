@@ -2,7 +2,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { snapStroke, isClosedLoop } from '../src/ink/shapes.js';
+import { snapStroke, isClosedLoop, isJustMarks } from '../src/ink/shapes.js';
 
 // Seeded wobble, so a "hand drawn" stroke is the same every run.
 let seed = 7;
@@ -113,4 +113,22 @@ test('circle to ask: a loose loop around something counts, a written o or a line
     c.push({ x: 200 + Math.cos(a) * 100, y: 200 + Math.sin(a) * 100 });
   }
   assert.equal(isClosedLoop(c), false, 'an open C');
+});
+
+test('underlines and circles are marks, writing is not', function () {
+  const underline = handLine(100, 300, 400, 305, 2);
+  const circle = handEllipse(300, 200, 150, 60, 6);
+  assert.equal(isJustMarks([underline]), true, 'an underline');
+  assert.equal(isJustMarks([underline, circle]), true, 'an underline and a circle');
+  // H: three straight strokes is writing.
+  assert.equal(isJustMarks([handLine(0, 0, 0, 100, 2), handLine(60, 0, 60, 100, 2), handLine(0, 50, 60, 50, 2)]), false, 'an H');
+  // A curvy stroke, like a written S, is writing.
+  const s = [];
+  for (let i = 0; i <= 40; i++) {
+    const a = (i / 40) * Math.PI * 2;
+    s.push([100 + Math.sin(a) * 30 * (i < 20 ? 1 : -1), 100 + i * 3]);
+  }
+  assert.equal(isJustMarks([stroke(s)]), false, 'an S');
+  assert.equal(isJustMarks([handLine(0, 0, 10, 0, 0.5)]), false, 'a short dash could be a minus sign');
+  assert.equal(isJustMarks([]), false);
 });

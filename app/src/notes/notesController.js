@@ -25,6 +25,7 @@ import {
 import { loadNotes, saveNotes } from './notesStorage.js';
 import { strokesToPng } from './strokeImage.js';
 import { strokesSignature } from '../ink/inkItems.js';
+import { isJustMarks } from '../ink/shapes.js';
 import { createNotesPanel } from './notesPanel.js';
 import { emptyTutor, worthReviewing, applyFix, resolveIssue, addMessage } from '../tutor/tutorData.js';
 
@@ -180,6 +181,17 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     const start = sentCount - fresh.length;
     const signature = strokesSignature(fresh);
     const key = attemptKey(tab, page, sentCount);
+
+    // An underline or a circle isn't writing. Count it as done without asking Gemini, so the
+    // button doesn't light up for nothing.
+    if (isJustMarks(fresh.filter((item) => item.type !== 'text'))) {
+      markTranscribed(tab.notes, page, sentCount, sentCount);
+      save(tab);
+      if (manual) {
+        onStatus('Only lines and circles here, nothing to type up');
+      }
+      return;
+    }
 
     busy = tab;
     onBusyChange(true);
