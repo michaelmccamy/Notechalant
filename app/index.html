@@ -45,6 +45,7 @@
           <span class="connection-label">Pen</span>
           <div class="connection-grid single" role="group" aria-label="Pen connection">
             <button id="connect-bluetooth" title="Connect to the pen over Bluetooth (Chrome or Edge)" aria-pressed="false">Connect pen</button>
+            <button id="connect-remote" title="Connect the IR remote's Arduino over USB (Chrome or Edge). Works alongside the pen" aria-pressed="false"><span class="label">Remote</span></button>
           </div>
           <div class="group indicators" id="bluetooth-indicators" hidden>
             <span class="indicator" id="bluetooth-pen-indicator">Pen: offline</span>
@@ -306,7 +307,6 @@
           <button id="connect-relay" title="Receive the pen through the laptop relay (npm run relay)" aria-pressed="false">Relay</button>
           <button id="connect-serial" title="Connect over USB (Chrome or Edge)" aria-pressed="false">USB</button>
           <button id="connect-wifi" title="Fallback: connect straight to a pen hosting its own WebSocket server" aria-pressed="false">WiFi</button>
-          <button id="connect-remote" title="Connect the IR remote's Arduino over USB (Chrome or Edge). Works alongside the pen" aria-pressed="false"><span class="label">Remote</span></button>
         </div>
         <div class="group indicators" id="relay-indicators" hidden>
           <span class="indicator" id="relay-indicator">Relay: not connected</span>
