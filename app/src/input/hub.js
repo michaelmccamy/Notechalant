@@ -2,7 +2,7 @@
 // The hub runs the sample through the motion module and moves the ink cursor: by an amount in
 // relative mode, or to a spot on the page in pointer mode (movement.absolute).
 // The mouse does not come through here because it already has a screen position.
-// A double tap on the pen's touch pad calls onDoubleTap (main.js recalibrates on it), and a triple
+// A double tap on the pen's touch pad calls onDoubleTap (main.js recenters on it), and a triple
 // tap onTripleTap (main.js clears the page).
 
 import { createDoubleTap } from './doubleTap.js';

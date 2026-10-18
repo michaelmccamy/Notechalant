@@ -93,16 +93,16 @@ const debug = createDebugPanel(motion, ink, {
 const hub = createInputHub({
   ink: ink,
   motion: debug.motion,
-  // Double tap on the pen's pad: recalibrates the gyro (hold still a moment), then the cursor
-  // starts from where the pen points. The two taps left dots, which aren't meant as ink.
+  // Double tap on the pen's pad: recenters. The two taps left dots, which aren't meant as ink.
   onDoubleTap: function () {
     ink.dropTrailingDots(2);
-    hub.recalibrate();
-    toolbar.setStatus('Recalibrating. Hold still');
+    hub.recenter();
+    toolbar.setStatus('Centered: the pen points at the middle of the page now');
   },
-  // Triple tap: clears the page. Its third tap lands while the double tap's recalibration runs,
-  // when nothing is drawn, so there's no dot to remove. Undo brings the page back.
+  // Triple tap: clears the page. The double tap before it already recentered and removed two
+  // dots, so only the third is left. Undo brings the page back.
   onTripleTap: function () {
+    ink.dropTrailingDots(1);
     ink.clear();
     toolbar.setStatus('Page cleared. Undo (Ctrl+Z) brings it back');
   },
@@ -125,7 +125,7 @@ setInterval(function () {
     calibratingText.textContent = state.moved ? 'You moved, so it started over. Keep it still' : 'Measuring the gyro. About 2 seconds';
     calibratingFill.style.width = Math.round(state.progress * 100) + '%';
   } else if (wasCalibrating && !state.calibrating) {
-    toolbar.setStatus(motion.config.pointerMode ? 'Ready. Where the pen points now is the middle. Double tap the pad to recalibrate if it drifts' : 'Ready');
+    toolbar.setStatus(motion.config.pointerMode ? 'Ready. Where the pen points now is the middle. Double tap the pad to recenter' : 'Ready');
   }
   wasCalibrating = showing;
 }, 100);
@@ -268,7 +268,7 @@ function startCornerCalibration() {
       });
     } else if (message.step === 'done') {
       debug.refreshSettings();
-      tell('Screen calibrated. Double tap the pad to recalibrate if it drifts');
+      tell('Screen calibrated. Double tap the pad to recenter if it drifts');
     } else if (message.step === 'failed') {
       toolbar.setStatus(message.reason, true);
     } else {
