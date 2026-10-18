@@ -32,6 +32,18 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
   // What's typed in each tutor card's box, by block id. The panel redraws whenever a note or an
   // answer arrives, and this keeps a half-typed question from being wiped.
   const drafts = new Map();
+  // The panel keeps to the bottom, where new notes and tutor replies arrive, unless the user has
+  // scrolled up to read something.
+  let stickToBottom = true;
+  blocksEl.addEventListener('scroll', function () {
+    stickToBottom = blocksEl.scrollHeight - blocksEl.scrollTop - blocksEl.clientHeight < 40;
+  });
+
+  function keepAtBottom() {
+    if (stickToBottom) {
+      blocksEl.scrollTop = blocksEl.scrollHeight;
+    }
+  }
 
   document.getElementById('notes-copy').addEventListener('click', onCopy);
   document.getElementById('notes-export').addEventListener('click', onExport);
@@ -77,6 +89,8 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     const highlighted = highlightId ? blocksEl.querySelector('.fresh') : null;
     if (highlighted) {
       highlighted.scrollIntoView({ block: 'nearest' });
+    } else {
+      keepAtBottom();
     }
     if (refocusId) {
       const input = blocksEl.querySelector('[data-tutor-input="' + CSS.escape(refocusId) + '"]');
@@ -186,7 +200,8 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
     }
 
     card.appendChild(askForm(block, tutor.pending));
-    typeset(card, [review ? review.message : '', ...(review ? review.issues.flatMap((i) => [i.wrong, i.fix, i.why]) : []), ...tutor.thread.map((m) => m.text)].join(' '));
+    // Typeset math makes the card taller, so stay at the bottom after it.
+    typeset(card, [review ? review.message : '', ...(review ? review.issues.flatMap((i) => [i.wrong, i.fix, i.why]) : []), ...tutor.thread.map((m) => m.text)].join(' '), keepAtBottom);
     return card;
   }
 
@@ -249,9 +264,11 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
       body.appendChild(span('note-asked', 'You asked'));
     }
     renderMarkdown(block.text, body);
-    typeset(body, block.text);
-    // A drawing with no words shows as the drawing itself, with any caption typed above it.
-    if (block.sketch) {
+    typeset(body, block.text, keepAtBottom);
+    // A drawing with no words shows as the drawing itself, with any caption typed above it. What
+    // was circled or underlined to ask isn't shown: the question and the tutor's answer say what
+    // it was, and the picture took up most of the panel. The tutor still sees it.
+    if (block.sketch && !block.asked) {
       const img = document.createElement('img');
       img.className = 'note-sketch';
       img.src = block.sketch;
@@ -351,9 +368,12 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
 }
 
 // Renders any $...$ math inside `el`, loading KaTeX only if `text` has some.
-function typeset(el, text) {
+function typeset(el, text, then) {
   if (hasMath(text)) {
-    loadKatex().then((renderMath) => renderMath(el, MATH_OPTIONS));
+    loadKatex().then(function (renderMath) {
+      renderMath(el, MATH_OPTIONS);
+      if (then) then();
+    });
   }
 }
 
