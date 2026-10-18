@@ -148,29 +148,3 @@ function distanceToSegment(p, a, b) {
   const w = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared));
   return Math.hypot(p.x - (a.x + w * dx), p.y - (a.y + w * dy));
 }
-
-// Writing size setup: the user writes a word once, and the writing gain is set so it comes out
-// targetPx tall. The ink scales with the gain, so the new gain is the old one times target over
-// measured, kept within limits so one odd sample can't make writing vanishingly small or huge.
-export const SIZE_GAIN_MIN = 0.2;
-export const SIZE_GAIN_MAX = 1.2;
-
-export function gainForSize(gain, measuredPx, targetPx) {
-  if (!(measuredPx > 0)) {
-    return gain;
-  }
-  return Math.max(SIZE_GAIN_MIN, Math.min(SIZE_GAIN_MAX, (gain * targetPx) / measuredPx));
-}
-
-// The height of a set of strokes, top of the tallest letter to the bottom of the lowest.
-export function inkHeight(strokes) {
-  let top = Infinity;
-  let bottom = -Infinity;
-  for (const stroke of strokes) {
-    for (const p of stroke.points) {
-      top = Math.min(top, p.y);
-      bottom = Math.max(bottom, p.y);
-    }
-  }
-  return bottom > top ? bottom - top : 0;
-}
