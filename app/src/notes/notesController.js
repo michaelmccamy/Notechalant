@@ -19,22 +19,77 @@ import {
   contextTail,
   toMarkdown,
   shouldAutoTranscribe,
+  contextBefore,
+  findBlock,
 } from './noteData.js';
 import { loadNotes, saveNotes } from './notesStorage.js';
 import { strokesToPng } from './strokeImage.js';
 import { strokesSignature } from '../ink/inkItems.js';
 import { createNotesPanel } from './notesPanel.js';
+import { emptyTutor, worthReviewing, applyFix, resolveIssue, addMessage } from '../tutor/tutorData.js';
 
 const CONTEXT_CHARS = 400;
+const TUTOR_CONTEXT_CHARS = 1200;
 
-export function createNotesController({ getActiveTab, getFolder, isWriting, lastInkChangeAt, goToPage, recognize, cleanUp, idleMs, onStatus, onBusyChange }) {
+// tutor is { review(text, context), ask(text, context, thread) } (tutor/tutorClient.js).
+export function createNotesController({ getActiveTab, getFolder, isWriting, lastInkChangeAt, goToPage, recognize, cleanUp, tutor, idleMs, onStatus, onBusyChange }) {
   let auto = true;
   let autoCleanUp = false;
+  // Tutor mode: every new transcription is also checked by the tutor.
+  let tutorOn = false;
   // The tab a request is in flight for, or null.
   let busy = null;
   let failedKey = null;
 
   const panel = createNotesPanel({
+    onTutorOpen: function (id) {
+      const tab = getActiveTab();
+      const block = findBlock(tab.notes, id);
+      if (block && !block.tutor) {
+        block.tutor = emptyTutor();
+        panel.render(tab, tab.page, null, id);
+      }
+    },
+    onTutorAsk: function (id, text) {
+      askAbout(getActiveTab(), id, text);
+    },
+    onTutorFix: function (id, index) {
+      const tab = getActiveTab();
+      const block = findBlock(tab.notes, id);
+      const issue = block && block.tutor && block.tutor.review && block.tutor.review.issues[index];
+      if (!issue) {
+        return;
+      }
+      const fixed = applyFix(block.text, issue);
+      if (fixed === null) {
+        onStatus("That text isn't in the note any more, so there's nothing to replace");
+      } else {
+        block.text = fixed;
+      }
+      block.tutor.review = resolveIssue(block.tutor.review, index);
+      changed(tab);
+    },
+    onTutorRetry: function (id) {
+      const tab = getActiveTab();
+      const block = findBlock(tab.notes, id);
+      if (!block || !block.tutor) {
+        return;
+      }
+      const lastStudent = block.tutor.thread.length > 0 && block.tutor.thread[block.tutor.thread.length - 1].role === 'student';
+      if (lastStudent) {
+        sendThread(tab, block);
+      } else {
+        reviewBlock(tab, block);
+      }
+    },
+    onTutorDismiss: function (id) {
+      const tab = getActiveTab();
+      const block = findBlock(tab.notes, id);
+      if (block) {
+        delete block.tutor;
+        changed(tab);
+      }
+    },
     onEdit: function (id, text) {
       const tab = getActiveTab();
       editBlock(tab.notes, id, text);
@@ -161,6 +216,9 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     } else {
       onStatus(block ? 'Added to notes' : 'No writing found, kept it as ink');
     }
+    if (block && tutorOn && worthReviewing(block.text)) {
+      reviewBlock(tab, block);
+    }
   }
 
   // Undo of a clean up put the handwriting back. Keep it counted as transcribed.
@@ -170,6 +228,102 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     }
     handwritingRestored(tab.notes, page, index, restored);
     save(tab);
+  }
+
+  // ---- Tutor ----
+  //
+  // Requests run alongside transcription and each other, one per note. Each keeps the tab and
+  // block it started with, so an answer that arrives after switching files still lands on the
+  // right note and saves to the right place.
+
+  async function reviewBlock(tab, block) {
+    block.tutor = Object.assign(block.tutor || emptyTutor(), { pending: true, error: '' });
+    showTutor(tab);
+    let review;
+    try {
+      review = await tutor.review(block.text, contextBefore(tab.notes, block.id, TUTOR_CONTEXT_CHARS));
+    } catch (err) {
+      review = err;
+    }
+    // Dismissed while the tutor was thinking.
+    if (!block.tutor) {
+      return;
+    }
+    block.tutor.pending = false;
+    if (review instanceof Error) {
+      block.tutor.error = review.message;
+    } else {
+      block.tutor.review = review;
+      // A quiet tutor with nothing else on the card leaves the note as it was.
+      if (block.tutor.review === null && block.tutor.thread.length === 0) {
+        delete block.tutor;
+      }
+      if (block.tutor && block.tutor.review) {
+        onStatus(tutorStatus(block.tutor.review));
+      }
+    }
+    showTutor(tab);
+    save(tab);
+  }
+
+  function askAbout(tab, id, text) {
+    const block = findBlock(tab.notes, id);
+    if (!block || text.trim() === '') {
+      return;
+    }
+    block.tutor = block.tutor || emptyTutor();
+    if (block.tutor.pending) {
+      return;
+    }
+    addMessage(block.tutor, 'student', text.trim());
+    sendThread(tab, block);
+  }
+
+  async function sendThread(tab, block) {
+    block.tutor.pending = true;
+    block.tutor.error = '';
+    showTutor(tab);
+    const thread = block.tutor.thread;
+    let reply;
+    try {
+      reply = await tutor.ask(block.text, contextBefore(tab.notes, block.id, TUTOR_CONTEXT_CHARS), thread);
+    } catch (err) {
+      reply = err;
+    }
+    // Dismissed while the tutor was thinking.
+    if (!block.tutor) {
+      return;
+    }
+    if (reply instanceof Error) {
+      block.tutor.error = reply.message;
+    } else {
+      addMessage(block.tutor, 'tutor', reply);
+    }
+    block.tutor.pending = false;
+    showTutor(tab);
+    save(tab);
+  }
+
+  function showTutor(tab) {
+    if (getActiveTab() === tab) {
+      panel.render(tab, tab.page);
+    }
+  }
+
+  function tutorStatus(review) {
+    if (review.verdict === 'issues') {
+      return 'Tutor found ' + review.issues.length + (review.issues.length === 1 ? ' thing' : ' things') + ' to fix';
+    }
+    if (review.verdict === 'question') {
+      return 'Tutor has a question for you';
+    }
+    return 'Tutor checked it. Looks right';
+  }
+
+  function setTutor(isOn) {
+    tutorOn = isOn;
+    panel.setTutorOn(isOn);
+    show(getActiveTab());
   }
 
   function finish() {
@@ -219,7 +373,7 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     autoCleanUp = isOn;
   }
 
-  return { attach, show, tick, transcribeNow, addNote, setAuto, setAutoCleanUp, onHandwritingRestored };
+  return { attach, show, tick, transcribeNow, addNote, setAuto, setAutoCleanUp, setTutor, onHandwritingRestored };
 }
 
 // Identifies one attempt: which file, which page, how many strokes. A failed attempt isn't

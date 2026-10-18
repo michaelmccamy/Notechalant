@@ -2,12 +2,14 @@
 //
 // The browser sends handwriting as a PNG data URL to POST /api/recognize, and gets { text }.
 // Circle to ask sends the circled part of the page to POST /api/explain, and gets
-// { about, text }.
+// { about, text }. Tutor mode reviews notes and answers questions at POST /api/tutor.
 // It exists so the API key stays in server/.env and never ships in frontend code.
-// The Gemini call itself lives in recognize.mjs, shared with the Vercel function in api/.
+// The request logic lives in recognize.mjs and tutor.mjs, and the Gemini call in gemini.mjs,
+// all shared with the Vercel functions in api/.
 
 import http from 'node:http';
 import { recognize, explain, hasConfig } from './recognize.mjs';
+import { tutor } from './tutor.mjs';
 
 // Load server/.env if it exists (Node 20.12 or newer).
 try {
@@ -44,13 +46,13 @@ function readBody(req) {
   });
 }
 
-// handler is recognize or explain.
-async function handleImage(req, res, handler) {
+// handler is recognize, explain, or tutor. Each answers a missing or unreadable body with a 400.
+async function handleJson(req, res, handler) {
   let body = null;
   try {
     body = JSON.parse(await readBody(req));
   } catch (err) {
-    // The handler answers a missing image with a 400.
+    // Left as null for the handler to reject.
   }
   const result = await handler(body, process.env);
   sendJson(res, result.status, result.body);
@@ -58,11 +60,15 @@ async function handleImage(req, res, handler) {
 
 const server = http.createServer(function (req, res) {
   if (req.method === 'POST' && req.url === '/api/recognize') {
-    handleImage(req, res, recognize);
+    handleJson(req, res, recognize);
     return;
   }
   if (req.method === 'POST' && req.url === '/api/explain') {
-    handleImage(req, res, explain);
+    handleJson(req, res, explain);
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/api/tutor') {
+    handleJson(req, res, tutor);
     return;
   }
   if (req.method === 'GET' && req.url === '/api/health') {

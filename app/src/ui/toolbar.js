@@ -34,6 +34,7 @@ export function createToolbar(handlers) {
     saveCopy: document.getElementById('save-copy'),
     transcribe: document.getElementById('transcribe'),
     notes: document.getElementById('toggle-notes'),
+    tutor: document.getElementById('toggle-tutor'),
     serial: document.getElementById('connect-serial'),
     wifi: document.getElementById('connect-wifi'),
     recording: document.getElementById('load-recording'),
@@ -107,6 +108,7 @@ export function createToolbar(handlers) {
   buttons.saveCopy.addEventListener('click', handlers.onSaveCopy);
   buttons.transcribe.addEventListener('click', handlers.onTranscribe);
   buttons.notes.addEventListener('click', handlers.onToggleNotes);
+  buttons.tutor.addEventListener('click', handlers.onToggleTutor);
   askInput.addEventListener('change', function () {
     handlers.onAskChange(askInput.checked);
   });
@@ -221,6 +223,11 @@ export function createToolbar(handlers) {
     buttons.notes.setAttribute('aria-pressed', String(isShown));
   }
 
+  function setTutorOn(isOn) {
+    buttons.tutor.classList.toggle('active', isOn);
+    buttons.tutor.setAttribute('aria-pressed', String(isOn));
+  }
+
   return {
     setStatus,
     setActiveSource,
@@ -233,6 +240,7 @@ export function createToolbar(handlers) {
     setSnap,
     setAsk,
     setNotesShown,
+    setTutorOn,
     setRemoteOn,
     nextColor,
     nextSize,

@@ -1,10 +1,13 @@
 // A file's notes, as plain data. No DOM or storage in here, so it all runs under `npm test`.
 //
-//   { blocks: [{ id, text, page, createdAt }], transcribed: { pageIndex: strokeCount } }
+//   { blocks: [{ id, text, page, createdAt, tutor? }], transcribed: { pageIndex: strokeCount } }
 //
 // Ink stays on the page after it's transcribed, unless clean up swaps it for typed text.
 // `transcribed[page]` counts how many of that page's ink items (oldest first) have been sent
 // already, so only newer strokes go next time. A text item from clean up counts as one item.
+// `tutor` is the tutor's feedback on a block, if any (see tutor/tutorData.js).
+
+import { packTutor, unpackTutor } from '../tutor/tutorData.js';
 
 export function emptyNotes() {
   return { blocks: [], transcribed: {} };
@@ -82,6 +85,17 @@ export function contextTail(notes, maxChars) {
   return text.length > maxChars ? text.slice(text.length - maxChars) : text;
 }
 
+// The notes written before one block, as context for the tutor looking at that block.
+export function contextBefore(notes, id, maxChars) {
+  const blocks = orderedBlocks(notes);
+  const index = blocks.findIndex((block) => block.id === id);
+  return contextTail({ blocks: index < 0 ? blocks : blocks.slice(0, index) }, maxChars);
+}
+
+export function findBlock(notes, id) {
+  return notes.blocks.find((block) => block.id === id) || null;
+}
+
 // Markdown for Copy and Export. Multi-page files get a heading per page.
 export function toMarkdown(title, notes, pageCount) {
   const lines = ['# ' + title, ''];
@@ -98,7 +112,13 @@ export function toMarkdown(title, notes, pageCount) {
 
 // Saved form. Anything malformed is dropped instead of breaking the file open.
 export function packNotes(file, notes) {
-  return { version: 1, file: file, blocks: notes.blocks, transcribed: notes.transcribed };
+  const blocks = notes.blocks.map(function (block) {
+    if (!block.tutor) {
+      return block;
+    }
+    return Object.assign({}, block, { tutor: packTutor(block.tutor) });
+  });
+  return { version: 1, file: file, blocks: blocks, transcribed: notes.transcribed };
 }
 
 export function unpackNotes(data) {
@@ -109,7 +129,14 @@ export function unpackNotes(data) {
   if (Array.isArray(data.blocks)) {
     notes.blocks = data.blocks
       .filter((b) => b && typeof b.text === 'string' && typeof b.id === 'string')
-      .map((b) => ({ id: b.id, text: b.text, page: Number(b.page) || 0, createdAt: Number(b.createdAt) || 0 }));
+      .map(function (b) {
+        const block = { id: b.id, text: b.text, page: Number(b.page) || 0, createdAt: Number(b.createdAt) || 0 };
+        const tutor = unpackTutor(b.tutor);
+        if (tutor !== null) {
+          block.tutor = tutor;
+        }
+        return block;
+      });
   }
   if (data.transcribed && typeof data.transcribed === 'object') {
     for (const page of Object.keys(data.transcribed)) {
