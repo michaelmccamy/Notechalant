@@ -37,6 +37,7 @@ export function createToolbar(handlers) {
     recording: document.getElementById('load-recording'),
     remote: document.getElementById('connect-remote'),
     size: document.getElementById('pen-size'),
+    eraser: document.getElementById('eraser'),
   };
 
   const swatches = [];
@@ -99,6 +100,7 @@ export function createToolbar(handlers) {
     return SIZE_NAMES[sizeIndex];
   }
   buttons.size.addEventListener('click', nextSize);
+  buttons.eraser.addEventListener('click', handlers.onEraser);
 
   buttons.undo.addEventListener('click', handlers.onUndo);
   buttons.clear.addEventListener('click', handlers.onClear);
@@ -194,6 +196,11 @@ export function createToolbar(handlers) {
     setLabel(buttons.remote, isOn ? 'Remote on' : 'Remote');
   }
 
+  function setEraser(isOn) {
+    buttons.eraser.classList.toggle('active', isOn);
+    buttons.eraser.setAttribute('aria-pressed', String(isOn));
+  }
+
   function setNotesShown(isShown) {
     buttons.notes.classList.toggle('active', isShown);
     buttons.notes.setAttribute('aria-pressed', String(isShown));
@@ -215,6 +222,7 @@ export function createToolbar(handlers) {
     setNotesShown,
     setTutorOn,
     setRemoteOn,
+    setEraser,
     nextColor,
     nextSize,
     buttons,

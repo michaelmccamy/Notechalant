@@ -55,7 +55,15 @@ const NOTES_SHOWN_KEY = 'notechalant.notesShown';
 const TUTOR_KEY = 'notechalant.tutor';
 
 const canvas = document.getElementById('ink');
-const ink = createInkCanvas(canvas);
+// The notes track ink by stroke position, so they hear about erased and restored strokes.
+const ink = createInkCanvas(canvas, {
+  onErase: function (indices) {
+    return notes.inkErased(indices);
+  },
+  onRestore: function (indices, info) {
+    notes.inkRestored(indices, info);
+  },
+});
 const motion = createMotion();
 const hub = createInputHub({ ink: ink, motion: motion });
 
@@ -603,6 +611,12 @@ function sourceEnded(name, message) {
 const toolbar = createToolbar({
   onColor: function (color) {
     ink.setColor(color);
+    // Picking a color means writing again.
+    setEraser(false);
+  },
+
+  onEraser: function () {
+    setEraser(!ink.isErasing());
   },
 
   onSize: function (width) {
@@ -947,10 +961,20 @@ function onExplorerButton(delta) {
 
 // Keyboard shortcuts.
 // Space  hold for pen down (stands in for the button)
+function setEraser(isOn) {
+  if (ink.isErasing() === isOn) {
+    return;
+  }
+  ink.setErasing(isOn);
+  toolbar.setEraser(isOn);
+  toolbar.setStatus(isOn ? 'Eraser on. Drag over strokes to remove them' : 'Pen on');
+}
+
 // Page Up / Page Down  previous or next page
 // Ctrl/Cmd+Z  undo
 // Ctrl/Cmd+S  save a copy with the ink on it
 // C  recenter cursor
+// E  eraser on or off
 // R  recalibrate motion
 // P  enter or leave present mode, Esc leaves it
 // Enter  transcribe new writing on this page now
@@ -971,6 +995,8 @@ window.addEventListener('keydown', function (event) {
   } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
     event.preventDefault();
     saveCopy();
+  } else if ((event.key === 'e' || event.key === 'E') && !event.ctrlKey && !event.metaKey) {
+    setEraser(!ink.isErasing());
   } else if (event.key === 'c' || event.key === 'C') {
     ink.centerCursor();
   } else if (event.key === 'r' || event.key === 'R') {

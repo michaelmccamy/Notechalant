@@ -124,6 +124,12 @@ button.active {
   font-size: 13px;
 }
 
+.head-button.confirming {
+  border-color: var(--warn);
+  color: var(--warn);
+  font-weight: 600;
+}
+
 .icon-button {
   display: inline-flex;
   align-items: center;
@@ -719,8 +725,9 @@ body.notes-hidden .notes {
 
 .notes-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
+  gap: 6px 4px;
   padding: 18px 18px 0 22px;
 }
 

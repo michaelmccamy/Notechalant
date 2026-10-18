@@ -34,7 +34,7 @@ function loadKatex() {
 
 const TUTOR_KIND_LABELS = { grammar: 'Grammar', spelling: 'Spelling', math: 'Math', fact: 'Fact', other: 'Note' };
 
-export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExport, onTutorAskPage, onTutorOpen, onTutorAsk, onTutorFix, onTutorRetry, onTutorDismiss }) {
+export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExport, onClear, onTutorAskPage, onTutorOpen, onTutorAsk, onTutorFix, onTutorRetry, onTutorDismiss }) {
   const fileEl = document.getElementById('notes-file');
   const blocksEl = document.getElementById('notes-blocks');
   // "Ask about this page", under the notes while tutor mode is on.
@@ -59,6 +59,26 @@ export function createNotesPanel({ onEdit, onDelete, onGoToPage, onCopy, onExpor
 
   document.getElementById('notes-copy').addEventListener('click', onCopy);
   document.getElementById('notes-export').addEventListener('click', onExport);
+
+  // Clear asks for a second click within a few seconds, since it deletes every note at once.
+  const clearButton = document.getElementById('notes-clear');
+  let clearTimer = null;
+  function resetClear() {
+    clearTimeout(clearTimer);
+    clearTimer = null;
+    clearButton.textContent = 'Clear';
+    clearButton.classList.remove('confirming');
+  }
+  clearButton.addEventListener('click', function () {
+    if (clearTimer === null) {
+      clearButton.textContent = 'Clear all?';
+      clearButton.classList.add('confirming');
+      clearTimer = setTimeout(resetClear, 3000);
+      return;
+    }
+    resetClear();
+    onClear();
+  });
 
   // tab.notes is null while its notes are still loading. focusTutorId puts the cursor in that
   // block's tutor box (after "Ask tutor" is clicked).

@@ -13,6 +13,9 @@ import {
   addBlock,
   editBlock,
   removeBlock,
+  clearBlocks,
+  strokesErased,
+  strokesRestored,
   contextTail,
   toMarkdown,
   shouldAutoTranscribe,
@@ -119,6 +122,16 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     onExport: function () {
       const tab = getActiveTab();
       download(tab.name.replace(/\.[^.]+$/, '') + ' notes.md', markdownFor(tab));
+    },
+    onClear: function () {
+      const tab = getActiveTab();
+      if (!tab.notes || tab.notes.blocks.length === 0) {
+        onStatus('No notes to clear');
+        return;
+      }
+      clearBlocks(tab.notes);
+      changed(tab);
+      onStatus('Notes cleared');
     },
   });
 
@@ -419,7 +432,27 @@ export function createNotesController({ getActiveTab, getFolder, isWriting, last
     auto = isOn;
   }
 
-  return { attach, show, tick, transcribeNow, setAuto, setTutor };
+  // The eraser removed strokes from the page on screen, or undo put them back.
+  function inkErased(indices) {
+    const tab = getActiveTab();
+    if (!tab.notes) {
+      return null;
+    }
+    const info = strokesErased(tab.notes, tab.page, indices);
+    save(tab);
+    return info;
+  }
+
+  function inkRestored(indices, info) {
+    const tab = getActiveTab();
+    if (!tab.notes) {
+      return;
+    }
+    strokesRestored(tab.notes, tab.page, indices, info);
+    save(tab);
+  }
+
+  return { attach, show, tick, transcribeNow, setAuto, setTutor, inkErased, inkRestored };
 }
 
 // Identifies one attempt: which file, which page, how many strokes. A failed attempt isn't

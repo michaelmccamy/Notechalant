@@ -1,16 +1,32 @@
 // Owns everything drawn on the canvas.
 // A stroke is { color, width, points: [{ x, y }] } in CSS pixels.
 // Inputs either set an absolute position (mouse) or move the cursor by a delta (pen hardware).
+//
+// In eraser mode, pen down removes every stroke the cursor passes over. Whole strokes go, not
+// parts of them, which is forgiving when the air pen wobbles. One pass is one undo step.
+// onErase(indices) runs when strokes are removed, with their indices before removal, in order,
+// and whatever it returns comes back as onRestore(indices, info) if the erase is undone. The
+// notes use these, since they track ink by stroke position.
 
 const MIN_POINT_DISTANCE = 1.5;
 const CURSOR_RADIUS = 6;
+const ERASER_RADIUS = 12;
+// Steps along the path between two eraser positions, so a fast move can't skip over a stroke.
+const ERASER_STEP = 4;
 
-export function createInkCanvas(canvas) {
+export function createInkCanvas(canvas, hooks) {
   const ctx = canvas.getContext('2d');
+  const onErase = (hooks && hooks.onErase) || function () {};
+  const onRestore = (hooks && hooks.onRestore) || function () {};
 
   let strokes = [];
   let current = null;
   let undoStack = [];
+
+  let erasing = false;
+  // While the eraser is down: the strokes it has touched so far, hidden until pen up.
+  let erased = null;
+  let lastErase = null;
 
   let color = '#1c1c1a';
   let width = 4;
@@ -58,6 +74,12 @@ export function createInkCanvas(canvas) {
     cursor.visible = true;
     cursor.down = penDown;
 
+    if (erasing) {
+      eraseTo(x, y, penDown);
+      needsRender = true;
+      return;
+    }
+
     if (penDown && current === null) {
       startStroke(x, y);
       inkChanged();
@@ -87,8 +109,71 @@ export function createInkCanvas(canvas) {
     moveTo(x, y, penDown);
   }
 
+  function eraseTo(x, y, penDown) {
+    if (!penDown) {
+      finishErase();
+      return;
+    }
+    if (erased === null) {
+      erased = new Set();
+      lastErase = { x: x, y: y };
+    }
+    const dx = x - lastErase.x;
+    const dy = y - lastErase.y;
+    const steps = Math.max(1, Math.ceil(Math.hypot(dx, dy) / ERASER_STEP));
+    for (let s = 1; s <= steps; s++) {
+      const px = lastErase.x + (dx * s) / steps;
+      const py = lastErase.y + (dy * s) / steps;
+      for (const stroke of strokes) {
+        if (!erased.has(stroke) && strokeHit(stroke, px, py, ERASER_RADIUS)) {
+          erased.add(stroke);
+          needsRender = true;
+        }
+      }
+    }
+    lastErase = { x: x, y: y };
+  }
+
+  // Pen up: the touched strokes leave for good, as one undo step.
+  function finishErase() {
+    if (erased === null) {
+      return;
+    }
+    const touched = erased;
+    erased = null;
+    lastErase = null;
+    if (touched.size === 0) {
+      return;
+    }
+    const removed = [];
+    const kept = [];
+    strokes.forEach(function (stroke, index) {
+      if (touched.has(stroke)) {
+        removed.push({ index: index, stroke: stroke });
+      } else {
+        kept.push(stroke);
+      }
+    });
+    strokes = kept;
+    const info = onErase(removed.map((r) => r.index));
+    undoStack.push({ type: 'erase', removed: removed, info: info });
+    inkChanged();
+  }
+
+  function setErasing(isOn) {
+    finishStroke();
+    finishErase();
+    erasing = isOn;
+    needsRender = true;
+  }
+
+  function isErasing() {
+    return erasing;
+  }
+
   function centerCursor() {
     finishStroke();
+    finishErase();
     cursor.x = cssWidth / 2;
     cursor.y = cssHeight / 2;
     cursor.visible = true;
@@ -102,6 +187,7 @@ export function createInkCanvas(canvas) {
 
   function undo() {
     finishStroke();
+    finishErase();
     const action = undoStack.pop();
     if (action === undefined) {
       return;
@@ -110,12 +196,20 @@ export function createInkCanvas(canvas) {
       strokes.pop();
     } else if (action.type === 'clear') {
       strokes = action.strokes;
+    } else if (action.type === 'erase') {
+      // Back where they were. Lowest index first, so each lands at its old position.
+      strokes = strokes.slice();
+      for (const r of action.removed) {
+        strokes.splice(r.index, 0, r.stroke);
+      }
+      onRestore(action.removed.map((r) => r.index), action.info);
     }
     inkChanged();
   }
 
   function clear() {
     finishStroke();
+    finishErase();
     if (strokes.length === 0) {
       return;
     }
@@ -141,6 +235,7 @@ export function createInkCanvas(canvas) {
 
   function setStrokes(newStrokes) {
     finishStroke();
+    finishErase();
     strokes = newStrokes;
     undoStack = [];
     needsRender = true;
@@ -152,7 +247,7 @@ export function createInkCanvas(canvas) {
 
   // True while the pen is down. Nothing gets saved or swapped mid-stroke.
   function isWriting() {
-    return current !== null;
+    return current !== null || erased !== null;
   }
 
   function getRevision() {
@@ -162,7 +257,9 @@ export function createInkCanvas(canvas) {
   function render() {
     ctx.clearRect(0, 0, cssWidth, cssHeight);
     for (let i = 0; i < strokes.length; i++) {
-      drawStroke(ctx, strokes[i]);
+      if (erased === null || !erased.has(strokes[i])) {
+        drawStroke(ctx, strokes[i]);
+      }
     }
     if (current !== null) {
       drawStroke(ctx, current);
@@ -173,6 +270,17 @@ export function createInkCanvas(canvas) {
   }
 
   function drawCursor() {
+    if (erasing) {
+      // The eraser: a ring as wide as what it removes, filled while it's down.
+      ctx.beginPath();
+      ctx.arc(cursor.x, cursor.y, ERASER_RADIUS, 0, Math.PI * 2);
+      ctx.fillStyle = cursor.down ? 'rgba(86, 97, 90, 0.18)' : 'rgba(255, 255, 255, 0.6)';
+      ctx.fill();
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = '#56615a';
+      ctx.stroke();
+      return;
+    }
     ctx.beginPath();
     ctx.arc(cursor.x, cursor.y, CURSOR_RADIUS, 0, Math.PI * 2);
     if (cursor.down) {
@@ -219,6 +327,8 @@ export function createInkCanvas(canvas) {
     hideCursor,
     undo,
     clear,
+    setErasing,
+    isErasing,
     setColor,
     setWidth,
     getStrokes,
@@ -229,6 +339,30 @@ export function createInkCanvas(canvas) {
     resize,
     toPngDataUrl,
   };
+}
+
+// True when the point is within `radius` of the stroke's line, counting the stroke's own width.
+export function strokeHit(stroke, x, y, radius) {
+  const reach = radius + stroke.width / 2;
+  const points = stroke.points;
+  if (points.length === 1) {
+    return Math.hypot(points[0].x - x, points[0].y - y) <= reach;
+  }
+  for (let i = 1; i < points.length; i++) {
+    if (segmentDistance(points[i - 1], points[i], x, y) <= reach) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function segmentDistance(a, b, x, y) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const lengthSq = dx * dx + dy * dy;
+  let t = lengthSq === 0 ? 0 : ((x - a.x) * dx + (y - a.y) * dy) / lengthSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(a.x + t * dx - x, a.y + t * dy - y);
 }
 
 // Draws a smooth curve through the points by using each point as a control
