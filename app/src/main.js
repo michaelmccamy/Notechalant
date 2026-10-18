@@ -1254,6 +1254,32 @@ window.addEventListener('blur', function () {
   hub.setSpacebar(false);
 });
 
+// Setup links: opening the app with ?setup=<name> switches the toolbar and motion settings to a
+// preset, then drops the parameter so a reload doesn't do it again. Corner calibration and the
+// pen direction are kept. For handing someone exact settings to test or record with.
+const SETUPS = {
+  // Writing test: Write and Snap on, nothing else changing the page, a little smaller ink.
+  'writing-test': {
+    toggles: { [WRITING_KEY]: 'on', [SNAP_KEY]: 'on', [AUTO_CLEANUP_KEY]: 'off', [AUTO_KEY]: 'off', [ASK_KEY]: 'off', [TUTOR_KEY]: 'off' },
+    motion: { pointerMode: true, writingGain: 0.45, writingString: 4, writingCurve: 0 },
+  },
+};
+const setupName = new URLSearchParams(location.search).get('setup');
+if (setupName !== null) {
+  const setup = SETUPS[setupName];
+  if (setup !== undefined) {
+    for (const [key, value] of Object.entries(setup.toggles)) {
+      saveSetting(key, value);
+    }
+    Object.assign(motion.config, setup.motion);
+    debug.refreshSettings();
+  }
+  history.replaceState(null, '', location.pathname);
+  setTimeout(function () {
+    toolbar.setStatus(setup !== undefined ? 'Set up for ' + setupName : 'No setup called ' + setupName, setup === undefined);
+  }, 0);
+}
+
 notes.attach(whiteboard);
 activate(whiteboard);
 const autoOn = loadSetting(AUTO_KEY) !== 'off';
