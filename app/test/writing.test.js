@@ -112,8 +112,7 @@ test('writing mode: strokes draw at the writing gain, slow drift barely moves th
   assert.ok(Math.abs(feed(off, offState, 0.4, -25, 1).x - 0.5) < 0.01, 'off: the plain pointer');
 });
 
-test('writing mode works like a mouse: slow moves carry on, a quick flick resets the hand, a double tap jumps to the pen', function () {
-  const gain = DEFAULT_CONFIG.writingGain;
+test('writing mode works like a mouse: slow moves go a little, fast moves go far, a double tap jumps to the pen', function () {
   const motion = writingMotion();
   const state = { t: 0 };
   feed(motion, state, 0.2, 0, 0);
@@ -121,16 +120,15 @@ test('writing mode works like a mouse: slow moves carry on, a quick flick resets
   // Holding still with the pen up: nothing moves.
   const held = feed(motion, state, 1, 0, 0);
   assert.ok(Math.abs(held.x - letter.x) < 1e-9, 'stays put');
-  // On to the next letter slowly (2 degrees at 10 deg/s): moves like writing.
-  const next = feed(motion, state, 0.2, -10, 0);
-  assert.ok(Math.abs(next.x - held.x - 0.1 * gain) < 0.005, 'next letter: ' + (next.x - held.x));
-  // The wrist runs out of room: a quick 20 degree flick back left with the pen up. No move.
-  const flicked = feed(motion, state, 0.25, 80, 0);
-  feed(motion, state, 0.3, 0, 0);
-  assert.ok(Math.abs(flicked.x - next.x) < 0.005, 'the flick is ignored: ' + (flicked.x - next.x));
-  // Writing carries on from the same spot, though the pen now points 20 degrees further left.
-  const more = feed(motion, state, 0.4, -25, 1);
-  assert.ok(Math.abs(more.x - next.x - 0.5 * gain) < 0.02, 'carries on: ' + (more.x - next.x));
+  // Easing the wrist back 2 degrees slowly (5 deg/s) barely moves the cursor.
+  const eased = feed(motion, state, 0.4, 5, 0);
+  assert.ok(held.x - eased.x < 0.02, 'slow return: ' + (held.x - eased.x).toFixed(4));
+  // The same 2 degrees fast (80 deg/s) goes much further: aiming across the page.
+  const before = feed(motion, state, 0.2, 0, 0);
+  const fast = feed(motion, state, 0.025, -80, 0);
+  feed(motion, state, 0.2, 0, 0);
+  const travelled = fast.x - before.x;
+  assert.ok(travelled > 4 * (held.x - eased.x), 'fast: ' + travelled.toFixed(4));
   // A double tap (recenter) puts the cursor where the pen points: recentered, the middle.
   motion.recenter();
   const centered = feed(motion, state, 0.1, 0, 0);

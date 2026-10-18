@@ -23,11 +23,12 @@
 // In pointer mode, Write works like a mouse rather than a laser pointer: the ink moves by how
 // much the pen turns, not to where it points. Writing along a line in pointer mode meant
 // twisting the wrist further and further, which changed how the hand wrote (and the slant) as
-// it went. Now the hand stays in one comfortable place:
-//   slow moves with the pen up (on to the next letter or line) move the cursor the same way,
-//   a quick flick with the pen up (faster than WRITING_CLUTCH_DPS) doesn't move it at all, like
-//     lifting a mouse, so the wrist can reset when it runs out of room,
-//   recenter (a double tap) puts the cursor where the pen points again.
+// it went. Now the hand stays in one comfortable place. With the pen up the cursor moves like a
+// mouse with acceleration: slow moves go a little (on to the next letter, or easing the wrist
+// back to where it's comfortable), fast moves go far (across the page). Recenter (a double tap)
+// puts the cursor where the pen points again. An earlier version ignored fast moves with the pen
+// up, as a way to reset the wrist, but aiming on the real pen is 30 to 150 deg/s, so the cursor
+// hardly moved (debug recording 00-11-09).
 // Turning is turned into page units with the corner calibration's scale at the middle of the
 // page, so the same turn draws the same size anywhere.
 //
@@ -200,10 +201,10 @@ const CORNER_AVERAGE = 6;
 
 // Writing mode in pointer mode. The speed is smoothed at this cutoff, so a letter slowing down
 // round a curve isn't treated as slow, while tremor (8 to 12 Hz) is averaged away. With the pen
-// up, turning faster than WRITING_CLUTCH_DPS doesn't move the cursor: on the real pen, moving on
-// to the next letter peaked at 6 to 14 deg/s (once 27), and quick moves reached 23 to 56.
+// up, the gain is writingGain times travelGain, times speed over accelerationMidDps (capped at
+// MAX_ACCELERATION_GAIN), so at 5 deg/s it's a quarter and at 80 deg/s four times.
 const WRITING_SPEED_CUTOFF_HZ = 4;
-const WRITING_CLUTCH_DPS = 30;
+const WRITING_TRAVEL_ACCELERATION = 1;
 // Writing calibration: a line shorter than this (page units, the page is 2 across) is a tap, and
 // a line leaning more than this is refused rather than learned, so one bad line can't warp
 // everything.
@@ -369,12 +370,10 @@ export function createMotion(overrides) {
     const k = lowPassAlpha(WRITING_SPEED_CUTOFF_HZ, dt);
     writeVelocity = [writeVelocity[0] + k * (turn[0] / dt - writeVelocity[0]), writeVelocity[1] + k * (turn[1] / dt - writeVelocity[1])];
     const speed = Math.hypot(writeVelocity[0], writeVelocity[1]);
-    // The faster of this sample's turn and the smoothed speed, so a flick is caught from its
-    // first sample instead of slipping through while the smoothed speed catches up.
-    if (penDown !== true && Math.max(speed, Math.hypot(turn[0], turn[1]) / dt) > WRITING_CLUTCH_DPS) {
-      return [writePos.x, writePos.y];
-    }
-    const gain = penDown === true ? precisionGain(speed, config) : config.writingGain;
+    const gain =
+      penDown === true
+        ? precisionGain(speed, config)
+        : config.writingGain * config.travelGain * accelerationGain(speed, WRITING_TRAVEL_ACCELERATION, config.accelerationMidDps);
     const [dx, dy] = turnToPage(turn);
     // Pen up too, so the whole space is one consistent mapping the hand can get used to.
     const c = config.writingCorrection || [1, 0, 0, 1];

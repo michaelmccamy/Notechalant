@@ -903,7 +903,7 @@ const toolbar = createToolbar({
   onWritingChange: function (isOn) {
     setWriting(isOn);
     saveSetting(WRITING_KEY, isOn ? 'on' : 'off');
-    toolbar.setStatus(isOn ? 'Write on: turn the pen to write, flick with the pen up to reset your wrist, double tap to jump to where you point' : 'Write off');
+    toolbar.setStatus(isOn ? 'Write on: the pen moves like a mouse. Move fast to go far, ease back slowly to reset your wrist, double tap to jump to where you point' : 'Write off');
   },
 
   onAutoCleanUpChange: function (isOn) {
