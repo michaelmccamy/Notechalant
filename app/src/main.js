@@ -1174,7 +1174,44 @@ function onRemoteButton(button) {
     case 'EXPLORER_DOWN':
       onExplorerButton(button === 'EXPLORER_DOWN' ? 1 : -1);
       break;
+    case 'CLEANUP':
+      toolbar.toggleAutoCleanUp();
+      break;
+    case 'ASK':
+      toolbar.toggleAsk();
+      break;
+    case 'AUTO':
+      toolbar.toggleAuto();
+      break;
+    case 'TUTOR':
+      setTutor(!tutorIsOn);
+      tell(tutorIsOn ? 'Tutor on. New writing gets checked' : 'Tutor off');
+      break;
+    case 'TUTOR_OPTION_1':
+    case 'TUTOR_OPTION_2':
+      pickTutorOption(button === 'TUTOR_OPTION_1' ? 0 : 1);
+      break;
+    case 'CALIBRATE':
+      // While calibrating, 6 marks the corner the pen points at, like tapping the pad.
+      if (calibratingCorners) {
+        motion.captureCorner();
+      } else {
+        startCornerCalibration();
+      }
+      break;
   }
+}
+
+// 4 and 5 answer the newest tutor question with its first or second quick answer.
+function pickTutorOption(index) {
+  const groups = document.querySelectorAll('.tutor-options');
+  const chips = groups.length > 0 ? groups[groups.length - 1].querySelectorAll('.tutor-option') : [];
+  if (index >= chips.length) {
+    tell(chips.length === 0 ? 'No tutor question to answer' : 'The tutor only gave one option');
+    return;
+  }
+  tell('Answered: ' + chips[index].textContent);
+  chips[index].click();
 }
 
 // >|| leaves present mode, or enters it. Outside present mode, a highlighted file in the explorer

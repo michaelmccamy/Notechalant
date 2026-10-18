@@ -187,6 +187,22 @@ export function createToolbar(handlers) {
     autoCleanUpInput.checked = isOn;
   }
 
+  // For the remote: flips a switch as if it were clicked, so the same handler runs.
+  function toggleAsk() {
+    askInput.checked = !askInput.checked;
+    handlers.onAskChange(askInput.checked);
+  }
+
+  function toggleAuto() {
+    autoInput.checked = !autoInput.checked;
+    handlers.onAutoChange(autoInput.checked);
+  }
+
+  function toggleAutoCleanUp() {
+    autoCleanUpInput.checked = !autoCleanUpInput.checked;
+    handlers.onAutoCleanUpChange(autoCleanUpInput.checked);
+  }
+
   // The remote is its own connection, so it can be on at the same time as a pen source.
   function setRemoteOn(isOn) {
     buttons.remote.classList.toggle('active', isOn);
@@ -214,9 +230,12 @@ export function createToolbar(handlers) {
     setActiveSource,
     setRelayStatus,
     setAuto,
+    toggleAuto,
     setSavingCopy,
     setAutoCleanUp,
+    toggleAutoCleanUp,
     setAsk,
+    toggleAsk,
     setNotesShown,
     setTutorOn,
     setRemoteOn,
