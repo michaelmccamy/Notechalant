@@ -198,9 +198,13 @@ const CORNER_AVERAGE = 6;
 // Writing mode in pointer mode. The speed is smoothed at this cutoff, so a letter slowing down
 // round a curve isn't treated as slow, while tremor (8 to 12 Hz) is averaged away. With the pen
 // up, the gain is writingGain times travelGain, times speed over accelerationMidDps (capped at
-// MAX_ACCELERATION_GAIN), so at 5 deg/s it's a quarter and at 80 deg/s four times.
+// MAX_ACCELERATION_GAIN), so at 80 deg/s it's four times. It never drops below
+// WRITING_TRAVEL_MIN of writingGain: moving on to the next letter is slow (about 7 degrees at 17
+// deg/s on the real pen), and shrinking it further put the o of hello on top of the l, which then
+// read as "help" (debug recording 00-27-08).
 const WRITING_SPEED_CUTOFF_HZ = 4;
 const WRITING_TRAVEL_ACCELERATION = 1;
+const WRITING_TRAVEL_MIN = 0.6;
 // With corners set, pointing past the edge of the calibrated area runs off towards infinity (and
 // beyond the horizon of a desk, back round the other side). The cursor stays within this.
 const POINTER_LIMIT = 1.5;
@@ -362,7 +366,8 @@ export function createMotion(overrides) {
     const gain =
       penDown === true
         ? precisionGain(speed, config)
-        : config.writingGain * config.travelGain * accelerationGain(speed, WRITING_TRAVEL_ACCELERATION, config.accelerationMidDps);
+        : config.writingGain *
+          Math.max(WRITING_TRAVEL_MIN, config.travelGain * accelerationGain(speed, WRITING_TRAVEL_ACCELERATION, config.accelerationMidDps));
     const [dx, dy] = turnToPage(turn);
     writePos = {
       x: Math.max(-1, Math.min(1, writePos.x + gain * dx)),

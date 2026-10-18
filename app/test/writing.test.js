@@ -120,15 +120,17 @@ test('writing mode works like a mouse: slow moves go a little, fast moves go far
   // Holding still with the pen up: nothing moves.
   const held = feed(motion, state, 1, 0, 0);
   assert.ok(Math.abs(held.x - letter.x) < 1e-9, 'stays put');
-  // Easing the wrist back 2 degrees slowly (5 deg/s) barely moves the cursor.
+  // Easing the wrist back 2 degrees slowly (5 deg/s) moves the cursor less than writing would
+  // (0.1 x the writing gain), but not so little that the next letter lands on this one.
   const eased = feed(motion, state, 0.4, 5, 0);
-  assert.ok(held.x - eased.x < 0.02, 'slow return: ' + (held.x - eased.x).toFixed(4));
+  const slow = held.x - eased.x;
+  assert.ok(slow < 0.1 * DEFAULT_CONFIG.writingGain && slow > 0.05 * DEFAULT_CONFIG.writingGain, 'slow return: ' + slow.toFixed(4));
   // The same 2 degrees fast (80 deg/s) goes much further: aiming across the page.
   const before = feed(motion, state, 0.2, 0, 0);
   const fast = feed(motion, state, 0.025, -80, 0);
   feed(motion, state, 0.2, 0, 0);
   const travelled = fast.x - before.x;
-  assert.ok(travelled > 4 * (held.x - eased.x), 'fast: ' + travelled.toFixed(4));
+  assert.ok(travelled > 3 * slow, 'fast: ' + travelled.toFixed(4) + ' slow: ' + slow.toFixed(4));
   // A double tap (recenter) puts the cursor where the pen points: recentered, the middle.
   motion.recenter();
   const centered = feed(motion, state, 0.1, 0, 0);
