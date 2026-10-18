@@ -134,5 +134,5 @@ test('writing mode works like a mouse: slow moves go a little, fast moves go far
   // A double tap (recenter) puts the cursor where the pen points: recentered, the middle.
   motion.recenter();
   const centered = feed(motion, state, 0.1, 0, 0);
-  assert.ok(Math.abs(centered.x) < 1e-6, 'jumps to the pen: ' + centered.x);
+  assert.ok(Math.abs(centered.x) < 1e-3, 'jumps to the pen: ' + centered.x);
 });

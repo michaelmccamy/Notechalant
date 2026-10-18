@@ -89,6 +89,7 @@ export const DEFAULT_CONFIG = {
   writingMidDps: 6, // turning speed that gets the full writing gain
   writingString: 4, // lazy brush string length in px, 0 is off
   calibrationMs: 2000, // how long to average the gyro for bias after a reset
+  biasTracking: true, // keep re-measuring the bias whenever the pen is held still
   maxGapMs: 50, // ignore time gaps longer than this so a dropped packet can't fling the cursor
 };
 
@@ -137,6 +138,17 @@ export function createOneEuro() {
 // within this standard deviation, or the window starts over. A still pen measures about
 // 0.4 deg/s, while a moving one measured from 3 up to 18 deg/s off as bias and made the cursor drift.
 const STILL_MAX_STD_DPS = 2.5;
+
+// The gyro's bias drifts as the sensor warms up: 12 minutes after calibrating, a pen held still
+// read about 1 deg/s (debug recording 00-27-08), which crept the cursor 20 px a second while
+// writing. So every BIAS_WINDOW_MS of the pen held still with the pad up, the bias moves
+// BIAS_TRACK_RATE of the way to what the gyro reads. Still means every axis stays within
+// BIAS_STILL_STD_DPS (a pen held still in the hand measured 0.6 to 1.5) and the reading is within
+// BIAS_TRACK_MAX_DPS of the bias, so a slow, steady real turn isn't mistaken for drift.
+const BIAS_WINDOW_MS = 1000;
+const BIAS_STILL_STD_DPS = 1.5;
+const BIAS_TRACK_MAX_DPS = 2.5;
+const BIAS_TRACK_RATE = 0.3;
 
 // Axis wizard: each line step lasts WIZARD_STEP_MS, and a line turning the pen less than
 // MIN_TILT_DEG means the user didn't move, so the wizard fails instead of guessing.
@@ -221,6 +233,8 @@ export function createMotion(overrides) {
   let count = 0;
   let bias = null;
   let movedDuringCalibration = false;
+  // Bias tracking: sums over the current still window, or null between windows.
+  let stillWindow = null;
   let wizard = null;
   // Unit vector pointing up (away from gravity) in sensor axes, or null until calibrated.
   let up = null;
@@ -282,6 +296,40 @@ export function createMotion(overrides) {
     // Pointer mode centers on wherever the pen points once calibration is done.
     center = null;
     movedDuringCalibration = false;
+  }
+
+  // Re-measures the bias whenever the pen is held still with the pad up (see BIAS_WINDOW_MS).
+  function trackBias(sample, penDown) {
+    if (!config.biasTracking || penDown || wizard !== null) {
+      stillWindow = null;
+      return;
+    }
+    if (stillWindow === null) {
+      stillWindow = { startT: sample.t, n: 0, sums: [0, 0, 0], squares: [0, 0, 0] };
+    }
+    const w = stillWindow;
+    for (let i = 0; i < 3; i++) {
+      const v = sample[AXES[i]];
+      w.sums[i] += v;
+      w.squares[i] += v * v;
+    }
+    w.n++;
+    if (sample.t - w.startT < BIAS_WINDOW_MS) {
+      return;
+    }
+    stillWindow = null;
+    const mean = w.sums.map((sum) => sum / w.n);
+    for (let i = 0; i < 3; i++) {
+      const std = Math.sqrt(Math.max(0, w.squares[i] / w.n - mean[i] * mean[i]));
+      if (std > BIAS_STILL_STD_DPS || Math.abs(mean[i] - bias[AXES[i]]) > BIAS_TRACK_MAX_DPS) {
+        return;
+      }
+    }
+    bias = {
+      gx: bias.gx + BIAS_TRACK_RATE * (mean[0] - bias.gx),
+      gy: bias.gy + BIAS_TRACK_RATE * (mean[1] - bias.gy),
+      gz: bias.gz + BIAS_TRACK_RATE * (mean[2] - bias.gz),
+    };
   }
 
   // Follows gravity as the pen turns and rolls.
@@ -551,6 +599,7 @@ export function createMotion(overrides) {
     }
     const dt = dtMs / 1000;
 
+    trackBias(sample, penDown === true);
     const rate = [sample.gx - bias.gx, sample.gy - bias.gy, sample.gz - bias.gz];
     trackGravity(sample, rate, dt);
     if (wizard !== null) {
@@ -695,6 +744,7 @@ export function createMotion(overrides) {
     accelSums = [0, 0, 0];
     count = 0;
     bias = null;
+    stillWindow = null;
     up = null;
     yaw = 0;
     center = null;

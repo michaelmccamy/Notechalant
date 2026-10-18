@@ -551,3 +551,33 @@ test('sanitizeConfig keeps good saved values and drops bad ones', function () {
   assert.equal(sanitizeConfig({ horizontalSign: 0.5 }).horizontalSign, DEFAULT_CONFIG.horizontalSign);
   assert.equal(sanitizeConfig({ rollCompensation: false }).rollCompensation, false);
 });
+
+test('bias tracking: drift from a warming sensor is absorbed while the pen is held still', function () {
+  // Calibrated at 0, then the gyro drifts to read 1 deg/s on gx, with hand tremor on top.
+  const tremor = (i) => 0.5 * Math.sin(i * 1.3);
+  const motion = relativeMotion({ calibrationMs: 0 });
+  // Holding still for 8 s corrects most of it (30% a second).
+  run(motion, 8, (i) => ({ gx: 1 + tremor(i), gy: tremor(i + 7), gz: 0 }), 0);
+  assert.ok(Math.abs(motion.getState().bias.gx - 1) < 0.1, 'bias follows the drift: ' + motion.getState().bias.gx);
+  // Now holding still doesn't creep the cursor.
+  const after = total(run(motion, 1, (i) => ({ gx: 1 + tremor(i), gy: tremor(i + 7), gz: 0 }), 8000));
+  const before = total(run(relativeMotion({ calibrationMs: 0 }), 1, (i) => ({ gx: 1 + tremor(i), gy: tremor(i + 7), gz: 0 }), 0));
+  assert.ok(Math.hypot(after.dx, after.dy) < Math.hypot(before.dx, before.dy) / 3, 'creep ' + JSON.stringify(after) + ' vs ' + JSON.stringify(before));
+});
+
+test('bias tracking leaves real movement alone: a slow steady turn, shaky moves, and writing', function () {
+  const slow = relativeMotion({ calibrationMs: 0 });
+  run(slow, 3, () => ({ gx: 4 }), 0);
+  assert.equal(slow.getState().bias.gx, 0, 'a steady 4 deg/s turn is a turn');
+  const shaky = relativeMotion({ calibrationMs: 0 });
+  run(shaky, 3, (i) => ({ gx: 1 + 3 * Math.sin(i * 0.9) }), 0);
+  assert.equal(shaky.getState().bias.gx, 0, 'moving too much to be held still');
+  const writing = relativeMotion({ calibrationMs: 0 });
+  for (let i = 0; i < 300; i++) {
+    writing.update({ t: i * 10, gx: 1, gy: 0, gz: 0, ax: 0, ay: 0, az: 1, pen: 1 }, true);
+  }
+  assert.equal(writing.getState().bias.gx, 0, 'never while the pad is down');
+  const off = relativeMotion({ calibrationMs: 0, biasTracking: false });
+  run(off, 3, () => ({ gx: 1 }), 0);
+  assert.equal(off.getState().bias.gx, 0, 'can be turned off');
+});
