@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { precisionGain, lazyFollow, smoothStroke, simplify } from '../src/ink/writing.js';
+import { precisionGain, lazyFollow, smoothStroke, simplify, gainForSize, inkHeight, SIZE_GAIN_MIN, SIZE_GAIN_MAX } from '../src/ink/writing.js';
 import { createMotion, DEFAULT_CONFIG } from '../src/motion/index.js';
 
 test('precision curve: slow drift moves much less than writing, and never more than the writing gain', function () {
@@ -135,4 +135,21 @@ test('writing mode works like a mouse: slow moves go a little, fast moves go far
   motion.recenter();
   const centered = feed(motion, state, 0.1, 0, 0);
   assert.ok(Math.abs(centered.x) < 1e-6, 'jumps to the pen: ' + centered.x);
+});
+
+test('writing size setup: the gain scales the sample to the target height, within limits', function () {
+  // A hello 128 px tall at gain 0.45 should be 64 px: half the gain.
+  assert.ok(Math.abs(gainForSize(0.45, 128, 64) - 0.225) < 1e-9);
+  // Too small at 32 px: double it.
+  assert.ok(Math.abs(gainForSize(0.45, 32, 64) - 0.9) < 1e-9);
+  // An odd sample can't push it outside the limits, and no sample keeps it.
+  assert.equal(gainForSize(0.45, 1000, 64), SIZE_GAIN_MIN);
+  assert.equal(gainForSize(0.45, 5, 64), SIZE_GAIN_MAX);
+  assert.equal(gainForSize(0.45, 0, 64), 0.45);
+  const word = [
+    { points: [{ x: 0, y: 10 }, { x: 0, y: 70 }] },
+    { points: [{ x: 10, y: 40 }, { x: 20, y: 74 }] },
+  ];
+  assert.equal(inkHeight(word), 64);
+  assert.equal(inkHeight([]), 0);
 });

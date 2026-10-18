@@ -12,9 +12,9 @@
 import { createInkCanvas } from './ink/inkCanvas.js';
 import { createTextLayer } from './ink/textLayer.js';
 import { snapStroke, strokeBox, isClosedLoop, underlineOf } from './ink/shapes.js';
-import { smoothStroke } from './ink/writing.js';
+import { smoothStroke, gainForSize, inkHeight } from './ink/writing.js';
 import { createCircleToAsk, explainImage } from './ask/circleToAsk.js';
-import { makeTextItem, strokesSignature, sameSignature, handwriting, handwritingPages } from './ink/inkItems.js';
+import { makeTextItem, strokesSignature, sameSignature, handwriting, handwritingPages, isText } from './ink/inkItems.js';
 import { attachMouse } from './input/mouse.js';
 import { createInputHub } from './input/hub.js';
 import { parseRecording } from './input/parseSample.js';
@@ -276,6 +276,101 @@ function startCornerCalibration() {
     }
   });
 }
+
+// Writing size setup: write "hello" once, and the writing gain is set so it comes out
+// SIZE_TARGET_PX tall, about two of the whiteboard's ruled lines (one for the small letters, one
+// more for h and l). Nothing is transcribed, snapped, or cleaned up meanwhile, and the sample is
+// removed after. W or the sidebar button starts it, a pause finishes it, Esc cancels.
+const sizeGuide = document.getElementById('size-guide');
+const sizeText = document.getElementById('size-text');
+const SIZE_TARGET_PX = 64;
+const SIZE_PAUSE_MS = 1500;
+const SIZE_MIN_PX = 12;
+let sizing = null;
+
+function startSizeSetup() {
+  if (sizing !== null) {
+    return;
+  }
+  if (!hub.isReceiving()) {
+    tell('Connect the pen first, then set the writing size');
+    return;
+  }
+  if (askOn) {
+    tell('Turn Ask off first. The writing size is for writing');
+    return;
+  }
+  ink.setSnap(null);
+  notes.setAuto(false);
+  notes.setAutoCleanUp(false);
+  sizing = { before: ink.getStrokes().length, revision: ink.getRevision(), changedAt: performance.now() };
+  sizing.timer = setInterval(checkSizeSample, 200);
+  sizeText.textContent = "At a size that feels comfortable. Pause when you're done. Esc cancels.";
+  sizeGuide.hidden = false;
+}
+
+function sizeSample() {
+  return ink.getStrokes().slice(sizing.before).filter((s) => !isText(s));
+}
+
+// Done once the pen has rested SIZE_PAUSE_MS after at least two strokes.
+function checkSizeSample() {
+  const now = performance.now();
+  if (ink.isWriting() || ink.getRevision() !== sizing.revision) {
+    sizing.revision = ink.getRevision();
+    sizing.changedAt = now;
+    return;
+  }
+  if (sizeSample().length >= 2 && now - sizing.changedAt >= SIZE_PAUSE_MS) {
+    finishSizeSetup();
+  }
+}
+
+function finishSizeSetup() {
+  const sample = sizeSample();
+  const height = inkHeight(sample);
+  removeSizeSample();
+  if (height < SIZE_MIN_PX) {
+    sizeText.textContent = 'That was too small to measure. Write "hello" again, a bit bigger. Esc cancels.';
+    sizing.revision = ink.getRevision();
+    sizing.changedAt = performance.now();
+    return;
+  }
+  const before = motion.config.writingGain;
+  motion.config.writingGain = Math.round(gainForSize(before, height, SIZE_TARGET_PX) * 100) / 100;
+  debug.refreshSettings();
+  endSizeSetup();
+  const change = motion.config.writingGain > before ? 'bigger' : motion.config.writingGain < before ? 'smaller' : 'the same size';
+  tell('Writing size set: it will come out ' + change + ' now (gain ' + motion.config.writingGain + ')');
+}
+
+function cancelSizeSetup() {
+  removeSizeSample();
+  endSizeSetup();
+  tell('Writing size unchanged');
+}
+
+// Undoes the sample's strokes (and any snaps of them), leaving the page as it was.
+function removeSizeSample() {
+  for (let guard = 0; ink.getStrokes().length > sizing.before && guard < 500; guard++) {
+    if (ink.undo() === null) {
+      break;
+    }
+  }
+}
+
+function endSizeSetup() {
+  clearInterval(sizing.timer);
+  sizing = null;
+  sizeGuide.hidden = true;
+  notes.setAuto(document.getElementById('auto-transcribe').checked);
+  setCleanUp(document.getElementById('auto-cleanup').checked);
+}
+
+document.getElementById('writing-size').addEventListener('click', function (event) {
+  event.currentTarget.blur();
+  startSizeSetup();
+});
 
 document.getElementById('calibrate-screen').addEventListener('click', function (event) {
   event.currentTarget.blur();
@@ -1250,6 +1345,15 @@ window.addEventListener('keydown', function (event) {
     debug.toggle();
   } else if (event.key === 'p' || event.key === 'P') {
     setPresenting(!presenting);
+  } else if (event.key === 'Escape' && sizing !== null) {
+    cancelSizeSetup();
+  } else if (event.key === 'Enter' && sizing !== null) {
+    event.preventDefault();
+    if (sizeSample().length > 0) {
+      finishSizeSetup();
+    }
+  } else if ((event.key === 'w' || event.key === 'W') && !event.ctrlKey && !event.metaKey) {
+    startSizeSetup();
   } else if (event.key === 'Escape' && calibratingCorners) {
     motion.cancelScreenCalibration();
   } else if (event.key === 'Escape' && circleToAsk.isOpen()) {

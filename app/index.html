@@ -53,6 +53,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /><circle cx="12" cy="12" r="2" /></svg>
             <span class="label">Calibrate screen</span>
           </button>
+          <button id="writing-size" class="btn" title="Write hello once, and the pen sets how big your writing comes out (W)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 9 6l5 12M6 14h6" /><path d="M17 10v8M15 12l2-2 2 2M15 16l2 2 2-2" /></svg>
+            <span class="label">Set writing size</span>
+          </button>
         </div>
       </aside>
 
@@ -110,6 +114,12 @@
             <div class="typed-layer" id="typed-layer"></div>
             <canvas id="ink"></canvas>
             <canvas id="debug-trail" hidden></canvas>
+            <div class="corner-guide" id="size-guide" hidden>
+              <div class="corner-card at-top">
+                <div class="corner-title">Write "hello"</div>
+                <div class="corner-text" id="size-text">At a size that feels comfortable. Pause when you're done. Esc cancels.</div>
+              </div>
+            </div>
             <div class="corner-guide" id="corner-guide" hidden>
               <span class="corner-dot top left"></span>
               <span class="corner-dot top right"></span>
