@@ -132,7 +132,6 @@ If the pen drops out, the app reconnects on its own. On a Mac, Chrome needs Blue
 | Pen | Does |
 |---|---|
 | Finger on the pad | Pen down: draw |
-| Double tap | Recenter: the cursor jumps to where the pen points |
 
 | Key | Does |
 |---|---|
