@@ -17,6 +17,8 @@ export function createInputHub({ ink, motion, onDoubleTap }) {
     // The motion module moves the cursor a little slower while drawing than while travelling.
     const movement = motion.update(sample, penDown);
     if (movement.ready) {
+      // Writing mode's lazy brush. Read every sample so the D panel's slider applies live.
+      ink.setLazyRadius(motion.config.writingMode ? motion.config.writingString : 0);
       if (movement.absolute) {
         ink.pointAt(movement.x, movement.y, penDown);
       } else {

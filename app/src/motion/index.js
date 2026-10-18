@@ -16,6 +16,13 @@
 //   with x and y from -1 to 1 across the page.
 //   Relative. Turning speed moves the cursor, like a mouse. The rest of this comment is about it.
 //
+// Writing mode (writingMode, the toolbar's Write toggle) works in both. While the pen is down,
+// movement is scaled by precisionGain (ink/writing.js): writingGain at writing speed, much less
+// for the slow drift of a shaky hand. In pointer mode that leaves the ink offset from where the
+// pen points. The offset holds for WRITING_HOLD_MS after the pen lifts, with pen-up moves scaled
+// the same way, so the gaps between letters match the letters. Then the cursor glides back to
+// where the pen points. The lazy brush and the curve fit happen in the ink canvas.
+//
 // Screen directions in relative mode, two ways:
 //   Roll compensation (default). The accelerometer gives "up" (gravity), tracked as the pen
 //   moves. Left and right is turning around up, and up and down is turning around the
@@ -26,6 +33,7 @@
 // startAxisWizard() measures penAxis and horizontalSign, and the fixed vectors too.
 
 import { toPlane, fromPlane, applyHomography, invertHomography, mappingFromCorners } from './screenMap.js';
+import { precisionGain } from '../ink/writing.js';
 
 export const AXES = ['gx', 'gy', 'gz'];
 
@@ -59,6 +67,11 @@ export const DEFAULT_CONFIG = {
   // Multipliers on top while the pen is down (writing) and up (moving to a spot).
   drawingGain: 0.8,
   travelGain: 1.3,
+  writingMode: false,
+  writingGain: 0.5, // writing mode: movement while drawing, as a share of pointer movement
+  writingCurve: 0.8, // how much slower turning is shrunk, 0 is a plain gain
+  writingMidDps: 25, // turning speed that gets the full writing gain
+  writingString: 10, // lazy brush string length in px, 0 is off
   calibrationMs: 2000, // how long to average the gyro for bias after a reset
   maxGapMs: 50, // ignore time gaps longer than this so a dropped packet can't fling the cursor
 };
@@ -166,6 +179,11 @@ function cross(a, b) {
 const CORNER_LOOKBACK = 10;
 const CORNER_AVERAGE = 6;
 
+// Writing mode in pointer mode: how long the ink offset holds after the pen lifts, then how
+// quickly the cursor glides back to where the pen points.
+const WRITING_HOLD_MS = 700;
+const WRITING_RETURN_MS = 200;
+
 export function createMotion(overrides) {
   const config = Object.assign({}, DEFAULT_CONFIG, overrides || {});
   const filterX = createOneEuro();
@@ -197,6 +215,12 @@ export function createMotion(overrides) {
   let wasPenDown = false;
   const filterPointX = createOneEuro();
   const filterPointY = createOneEuro();
+  // Writing mode in pointer mode: where the ink is, minus where the pen points, in page units
+  // (-1 to 1), plus the last pointing angles and the time since the pen lifted.
+  let writeOffset = { x: 0, y: 0 };
+  let lastWriteTarget = null;
+  let lastWriteAngles = null;
+  let sinceLiftMs = Infinity;
 
   function calibrate(sample) {
     if (calibrationStartT === null) {
@@ -264,6 +288,39 @@ export function createMotion(overrides) {
   // Makes wherever the pen points now the middle of the page.
   function recenter() {
     center = null;
+    clearWriting();
+  }
+
+  function clearWriting() {
+    writeOffset = { x: 0, y: 0 };
+    lastWriteTarget = null;
+    lastWriteAngles = null;
+    sinceLiftMs = Infinity;
+  }
+
+  // Shifts the pointer spot (x, y) by the writing offset, updated for this sample.
+  function applyWriting(x, y, right, above, dt, penDown) {
+    if (!config.writingMode) {
+      clearWriting();
+      return [x, y];
+    }
+    const previous = lastWriteTarget || { x: x, y: y };
+    const previousAngles = lastWriteAngles || { right: right, above: above };
+    lastWriteTarget = { x: x, y: y };
+    lastWriteAngles = { right: right, above: above };
+    sinceLiftMs = penDown === true ? 0 : sinceLiftMs + dt * 1000;
+    if (sinceLiftMs < WRITING_HOLD_MS) {
+      // The pen moved (x - previous.x). The ink moves gain times that, so the offset takes the rest.
+      const speed = Math.hypot(right - previousAngles.right, above - previousAngles.above) / dt;
+      const gain = penDown === true ? precisionGain(speed, config) : config.writingGain;
+      writeOffset.x += (gain - 1) * (x - previous.x);
+      writeOffset.y += (gain - 1) * (y - previous.y);
+    } else {
+      const keep = Math.exp((-dt * 1000) / WRITING_RETURN_MS);
+      writeOffset.x *= keep;
+      writeOffset.y *= keep;
+    }
+    return [x + writeOffset.x, y + writeOffset.y];
   }
 
   function pointerUpdate(rate, dt, penDown) {
@@ -310,6 +367,7 @@ export function createMotion(overrides) {
       x = (right - center.right) / config.pointerRangeXDeg;
       y = -(above - center.above) / config.pointerRangeYDeg;
     }
+    [x, y] = applyWriting(x, y, right, above, dt, penDown);
     // dx and dy are for the debug graph only: the change, as if the page were 1000 px wide.
     const previous = lastPointer || { x: x, y: y };
     lastPointer = { x: x, y: y };
@@ -469,7 +527,7 @@ export function createMotion(overrides) {
 
     let gain = config.pixelsPerDegree;
     if (penDown === true) {
-      gain *= config.drawingGain;
+      gain *= config.writingMode ? precisionGain(Math.hypot(rateX, rateY), config) : config.drawingGain;
     } else {
       gain *= accelerationGain(Math.hypot(rateX, rateY), config.acceleration, config.accelerationMidDps);
       if (penDown === false) {
@@ -585,6 +643,7 @@ export function createMotion(overrides) {
     yaw = 0;
     center = null;
     lastPointer = null;
+    clearWriting();
     recentPointing = [];
     turnSum = [0, 0, 0];
     filterPointX.reset();

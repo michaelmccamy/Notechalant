@@ -5,6 +5,7 @@
 // Inputs either set an absolute position (mouse) or move the cursor by a delta (pen hardware).
 
 import { isText } from './inkItems.js';
+import { lazyFollow } from './writing.js';
 
 const MIN_POINT_DISTANCE = 1.5;
 const CURSOR_RADIUS = 6;
@@ -36,6 +37,12 @@ export function createInkCanvas(canvas, options) {
   let snap = null;
   // Called with each finished stroke, after snapping. Circle to ask listens here.
   let onStrokeFinished = null;
+  // Writing mode (ink/writing.js). lazyRadius is the lazy brush's string length in px, 0 for
+  // off. While drawing, the ink comes from brush, which trails the cursor. smoother turns a
+  // finished stroke's points into smoothed ones, or is null.
+  let lazyRadius = 0;
+  let brush = null;
+  let smoother = null;
 
   function inkChanged() {
     revision++;
@@ -55,12 +62,17 @@ export function createInkCanvas(canvas, options) {
 
   function startStroke(x, y) {
     current = { color: color, width: width, points: [{ x: x, y: y }] };
+    brush = { x: x, y: y };
   }
 
   function finishStroke() {
     if (current === null) {
       return;
     }
+    if (smoother !== null) {
+      current.points = smoother(current.points);
+    }
+    brush = null;
     strokes.push(current);
     undoStack.push({ type: 'stroke' });
     const snapped = snap === null ? null : snap(current);
@@ -85,6 +97,14 @@ export function createInkCanvas(canvas, options) {
     snap = fn;
   }
 
+  function setLazyRadius(radius) {
+    lazyRadius = radius;
+  }
+
+  function setSmoother(fn) {
+    smoother = fn;
+  }
+
   // Absolute positioning, used by the mouse and by moveBy.
   function moveTo(x, y, penDown) {
     cursor.x = x;
@@ -99,11 +119,16 @@ export function createInkCanvas(canvas, options) {
       finishStroke();
       inkChanged();
     } else if (penDown) {
+      if (lazyRadius > 0) {
+        brush = lazyFollow(brush, cursor, lazyRadius);
+      } else {
+        brush = { x: x, y: y };
+      }
       const last = current.points[current.points.length - 1];
-      const dx = x - last.x;
-      const dy = y - last.y;
+      const dx = brush.x - last.x;
+      const dy = brush.y - last.y;
       if (dx * dx + dy * dy >= MIN_POINT_DISTANCE * MIN_POINT_DISTANCE) {
-        current.points.push({ x: x, y: y });
+        current.points.push({ x: brush.x, y: brush.y });
         inkChanged();
       }
     }
@@ -298,6 +323,15 @@ export function createInkCanvas(canvas, options) {
   }
 
   function drawCursor() {
+    // With the lazy brush, a faint string from the cursor to where the ink is going down.
+    if (cursor.down && brush !== null && lazyRadius > 0) {
+      ctx.beginPath();
+      ctx.moveTo(brush.x, brush.y);
+      ctx.lineTo(cursor.x, cursor.y);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(86, 97, 90, 0.5)';
+      ctx.stroke();
+    }
     ctx.beginPath();
     ctx.arc(cursor.x, cursor.y, CURSOR_RADIUS, 0, Math.PI * 2);
     if (cursor.down) {
@@ -355,6 +389,8 @@ export function createInkCanvas(canvas, options) {
     clear,
     replaceWithText,
     setSnap,
+    setLazyRadius,
+    setSmoother,
     setStrokeListener,
     setColor,
     setWidth,

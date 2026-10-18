@@ -12,7 +12,7 @@ import { DEFAULT_CONFIG, sanitizeConfig, smoothingToCutoff } from '../motion/ind
 const STORAGE_KEY = 'notechalant.motion';
 // Only the knobs on the panel are saved, so a later change to another default
 // (calibration time, say) isn't hidden by an old saved value.
-const TUNED_KEYS = ['screenMapping', 'pointerMode', 'pointerRangeXDeg', 'pointerRangeYDeg', 'pointerSmoothing', 'pixelsPerDegree', 'acceleration', 'drawingGain', 'travelGain', 'rollCompensation', 'penAxis', 'horizontalSign', 'xVector', 'yVector', 'smoothing', 'deadzone'];
+const TUNED_KEYS = ['screenMapping', 'pointerMode', 'pointerRangeXDeg', 'pointerRangeYDeg', 'pointerSmoothing', 'pixelsPerDegree', 'acceleration', 'drawingGain', 'travelGain', 'rollCompensation', 'penAxis', 'horizontalSign', 'xVector', 'yVector', 'smoothing', 'deadzone', 'writingString', 'writingGain', 'writingCurve'];
 const AXIS_NAMES = ['gx', 'gy', 'gz'];
 
 export function loadMotionSettings() {
@@ -78,6 +78,9 @@ export function createTuningControls(motion, handlers) {
     pointerRangeXDeg: document.getElementById('tune-range-x'),
     pointerRangeYDeg: document.getElementById('tune-range-y'),
     pointerSmoothing: document.getElementById('tune-pointer-smoothing'),
+    writingString: document.getElementById('tune-writing-string'),
+    writingGain: document.getElementById('tune-writing-gain'),
+    writingCurve: document.getElementById('tune-writing-curve'),
   };
   // One dropdown and one Invert checkbox per screen direction.
   const directions = {
@@ -96,6 +99,9 @@ export function createTuningControls(motion, handlers) {
     pointerRangeXDeg: document.getElementById('tune-range-x-value'),
     pointerRangeYDeg: document.getElementById('tune-range-y-value'),
     pointerSmoothing: document.getElementById('tune-pointer-smoothing-value'),
+    writingString: document.getElementById('tune-writing-string-value'),
+    writingGain: document.getElementById('tune-writing-gain-value'),
+    writingCurve: document.getElementById('tune-writing-curve-value'),
   };
 
   Object.assign(config, loadMotionSettings());
@@ -125,6 +131,9 @@ export function createTuningControls(motion, handlers) {
     outputs.pointerRangeXDeg.textContent = '±' + config.pointerRangeXDeg + '°';
     outputs.pointerRangeYDeg.textContent = '±' + config.pointerRangeYDeg + '°';
     outputs.pointerSmoothing.textContent = config.pointerSmoothing > 0 ? config.pointerSmoothing.toFixed(2) : 'off';
+    outputs.writingString.textContent = config.writingString > 0 ? config.writingString + ' px' : 'off';
+    outputs.writingGain.textContent = '×' + config.writingGain.toFixed(2);
+    outputs.writingCurve.textContent = config.writingCurve > 0 ? config.writingCurve.toFixed(1) : 'off';
   }
 
   function changed() {

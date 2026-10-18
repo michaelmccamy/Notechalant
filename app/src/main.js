@@ -12,6 +12,7 @@
 import { createInkCanvas } from './ink/inkCanvas.js';
 import { createTextLayer } from './ink/textLayer.js';
 import { snapStroke, strokeBox, isClosedLoop, underlineOf } from './ink/shapes.js';
+import { smoothStroke } from './ink/writing.js';
 import { createCircleToAsk, explainImage } from './ask/circleToAsk.js';
 import { makeTextItem, strokesSignature, sameSignature, handwriting, handwritingPages } from './ink/inkItems.js';
 import { attachMouse } from './input/mouse.js';
@@ -59,6 +60,7 @@ const TRANSCRIBE_IDLE_MS = 1200;
 const AUTO_KEY = 'notechalant.autoTranscribe';
 const AUTO_CLEANUP_KEY = 'notechalant.autoCleanUp';
 const SNAP_KEY = 'notechalant.snapShapes';
+const WRITING_KEY = 'notechalant.writingMode';
 const ASK_KEY = 'notechalant.askMode';
 const NOTES_SHOWN_KEY = 'notechalant.notesShown';
 const TUTOR_KEY = 'notechalant.tutor';
@@ -379,6 +381,13 @@ function showNotes(isShown) {
 }
 
 // Tutor feedback shows in the notes panel, so turning the tutor on opens the panel too.
+// Writing mode: the motion module's precision curve, and the ink canvas's curve fit on lift.
+// The input hub keeps the lazy brush's string length in step with the D panel's slider.
+function setWriting(isOn) {
+  motion.config.writingMode = isOn;
+  ink.setSmoother(isOn ? smoothStroke : null);
+}
+
 function setTutor(isOn) {
   tutorIsOn = isOn;
   notes.setTutor(isOn);
@@ -873,6 +882,12 @@ const toolbar = createToolbar({
     toolbar.setStatus(isOn ? 'Snap on: rough lines, circles, and boxes come out clean' : 'Snap off');
   },
 
+  onWritingChange: function (isOn) {
+    setWriting(isOn);
+    saveSetting(WRITING_KEY, isOn ? 'on' : 'off');
+    toolbar.setStatus(isOn ? 'Write on: steadier, smaller handwriting. Turn on Clean up to have words typed' : 'Write off');
+  },
+
   onAutoCleanUpChange: function (isOn) {
     notes.setAutoCleanUp(isOn);
     saveSetting(AUTO_CLEANUP_KEY, isOn ? 'on' : 'off');
@@ -1249,6 +1264,8 @@ toolbar.setAsk(askOn);
 const snapOn = loadSetting(SNAP_KEY) !== 'off';
 toolbar.setSnap(snapOn);
 ink.setSnap(snapOn ? snapStroke : null);
+setWriting(loadSetting(WRITING_KEY) === 'on');
+toolbar.setWriting(motion.config.writingMode);
 const autoCleanUpOn = loadSetting(AUTO_CLEANUP_KEY) === 'on';
 toolbar.setAutoCleanUp(autoCleanUpOn);
 notes.setAutoCleanUp(autoCleanUpOn);

@@ -84,6 +84,10 @@
             <input id="snap-shapes" type="checkbox" checked />
             Snap
           </label>
+          <label class="toggle" title="Steadier handwriting: slow shaky movement is shrunk, the ink trails the cursor on a short string, and each stroke is smoothed when you lift the pen. String length and gain are in the D panel">
+            <input id="writing-mode" type="checkbox" />
+            Write
+          </label>
 
           <button id="undo" class="btn icon-only" title="Undo (Ctrl+Z)" aria-label="Undo">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" /></svg>
@@ -301,6 +305,27 @@
           <output id="tune-travel-value"></output>
         </label>
         <input id="tune-travel" type="range" min="0.5" max="3" step="0.05" />
+      </section>
+
+      <section class="debug-section">
+        <div class="debug-title">Writing mode (Write in the toolbar)</div>
+        <label class="tuning-row" for="tune-writing-string" title="Lazy brush: the ink trails the cursor on a string this long, so wobble inside it never reaches the ink">
+          <span>String length</span>
+          <output id="tune-writing-string-value"></output>
+        </label>
+        <input id="tune-writing-string" type="range" min="0" max="40" step="1" />
+
+        <label class="tuning-row" for="tune-writing-gain" title="How far the ink moves while writing, as a share of how far the pointer moves">
+          <span>Writing gain</span>
+          <output id="tune-writing-gain-value"></output>
+        </label>
+        <input id="tune-writing-gain" type="range" min="0.2" max="1.2" step="0.05" />
+
+        <label class="tuning-row" for="tune-writing-curve" title="How much more slow movement is shrunk than fast. 0 shrinks everything the same">
+          <span>Precision curve</span>
+          <output id="tune-writing-curve-value"></output>
+        </label>
+        <input id="tune-writing-curve" type="range" min="0" max="2" step="0.1" />
       </section>
 
       <div class="tuning-actions">
