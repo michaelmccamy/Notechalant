@@ -6,7 +6,9 @@
 // snapStroke(stroke) returns { shape, stroke } with the clean stroke, or null.
 
 const MIN_SIZE = 30; // px, bounding box diagonal. Smaller strokes are letter parts and dots.
-const LINE_MAX_BOW = 0.08; // furthest point from the chord, as a share of the chord's length
+// Furthest point from the chord, as a share of the chord's length. Lines drawn with the air pen
+// bow 4 to 9% (debug recording 23-32-18), and a c or a ( bows 15% and up.
+const LINE_MAX_BOW = 0.1;
 const LINE_MIN_DIRECTNESS = 0.9; // chord length over path length
 const LEVEL_SNAP_DEG = 10; // lines this close to level or upright become exactly level or upright
 const CLOSED_MAX_GAP = 0.25; // start to end distance, as a share of the box diagonal

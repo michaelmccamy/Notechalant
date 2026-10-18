@@ -14,11 +14,21 @@ const STORAGE_KEY = 'notechalant.motion';
 // (calibration time, say) isn't hidden by an old saved value.
 const TUNED_KEYS = ['screenMapping', 'pointerMode', 'pointerRangeXDeg', 'pointerRangeYDeg', 'pointerSmoothing', 'pixelsPerDegree', 'acceleration', 'drawingGain', 'travelGain', 'rollCompensation', 'penAxis', 'horizontalSign', 'xVector', 'yVector', 'smoothing', 'deadzone', 'writingString', 'writingGain', 'writingCurve'];
 const AXIS_NAMES = ['gx', 'gy', 'gz'];
+// Bumped when Writing mode's defaults change, so settings saved before then don't hide the new
+// defaults (they were saved along with everything else, not chosen).
+const WRITING_VERSION = 2;
+const WRITING_KEYS = ['writingString', 'writingGain', 'writingCurve'];
 
 export function loadMotionSettings() {
   try {
-    const clean = sanitizeConfig(JSON.parse(localStorage.getItem(STORAGE_KEY)));
-    return pickTuned(clean);
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY));
+    const picked = pickTuned(sanitizeConfig(raw));
+    if (raw === null || raw.writingVersion !== WRITING_VERSION) {
+      for (const key of WRITING_KEYS) {
+        picked[key] = DEFAULT_CONFIG[key];
+      }
+    }
+    return picked;
   } catch (err) {
     return {};
   }
@@ -26,7 +36,7 @@ export function loadMotionSettings() {
 
 function saveMotionSettings(config) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(pickTuned(config)));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(Object.assign(pickTuned(config), { writingVersion: WRITING_VERSION })));
   } catch (err) {
     // Storage can be blocked. The settings still work until the page reloads.
   }

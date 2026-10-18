@@ -33,7 +33,7 @@ const files = process.argv.length > 2 ? process.argv.slice(2) : readdirSync(dir)
 
 const VARIANTS = [
   { name: 'before (pointer mode)', writing: false, lazy: 0, smooth: false },
-  { name: 'precision curve', writing: true, lazy: 0, smooth: false },
+  { name: 'writing gain', writing: true, lazy: 0, smooth: false },
   { name: '+ lazy brush', writing: true, lazy: 4, smooth: false },
   { name: '+ curve fit (Writing mode)', writing: true, lazy: 4, smooth: true },
 ];
