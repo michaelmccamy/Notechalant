@@ -16,6 +16,8 @@ export function createExplorer({ onOpenFolder, onReopen, onRefresh, onOpenFile, 
 
   let folder = null;
   let activePath = null;
+  // The row the remote is on. VOL+ and VOL- move it, and >|| opens it.
+  let cursorRow = null;
 
   document.getElementById('explorer-open-folder').addEventListener('click', onOpenFolder);
   document.getElementById('explorer-open-file').addEventListener('click', onPickFiles);
@@ -151,5 +153,52 @@ export function createExplorer({ onOpenFolder, onReopen, onRefresh, onOpenFile, 
     }
   }
 
-  return { showEmpty, showFolder, setActive };
+  // Rows the user can see right now: files and folders, skipping the insides of closed folders.
+  function visibleRows() {
+    if (folder === null) {
+      return [];
+    }
+    return Array.from(treeEl.querySelectorAll('.tree-row')).filter((row) => row.getClientRects().length > 0);
+  }
+
+  // Moves the remote's highlight up (-1) or down (+1). Starts from the open file if there's no
+  // highlight yet. Returns the highlighted name, or null if there's nothing to move through.
+  function moveCursor(delta) {
+    const rows = visibleRows();
+    if (rows.length === 0) {
+      return null;
+    }
+    let index = rows.indexOf(cursorRow);
+    if (index === -1) {
+      const current = rows.findIndex((row) => row.classList.contains('current'));
+      index = current !== -1 ? current : delta > 0 ? -1 : rows.length;
+    }
+    const next = rows[Math.max(0, Math.min(rows.length - 1, index + delta))];
+    if (cursorRow !== null) {
+      cursorRow.classList.remove('remote-cursor');
+    }
+    cursorRow = next;
+    cursorRow.classList.add('remote-cursor');
+    cursorRow.scrollIntoView({ block: 'nearest' });
+    return cursorRow.querySelector('.tree-label').textContent;
+  }
+
+  // Clicks the highlighted row. Returns 'file' if that opened a file, 'opened' or 'closed' if it
+  // was a folder, or null if nothing is highlighted. Opening a file drops the highlight, so the
+  // next VOL press starts from that file and >|| goes back to just toggling present mode.
+  function openCursor() {
+    if (cursorRow === null || !cursorRow.isConnected || cursorRow.getClientRects().length === 0) {
+      return null;
+    }
+    const row = cursorRow;
+    row.click();
+    if (row.classList.contains('tree-file')) {
+      row.classList.remove('remote-cursor');
+      cursorRow = null;
+      return 'file';
+    }
+    return row.parentElement.getAttribute('aria-expanded') === 'true' ? 'opened' : 'closed';
+  }
+
+  return { showEmpty, showFolder, setActive, moveCursor, openCursor };
 }

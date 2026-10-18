@@ -1,12 +1,26 @@
+/* Design C, "Field Notes": three full-height columns (sidebar | editor | notes) on a soft
+   green-grey, with notebook paper on the whiteboard. Rules that draw documents themselves
+   (pages, sheets, PDFs, ink, note text) are kept separate further down. */
+
 :root {
-  --bg: #f7f7f5;
-  --panel: #ffffff;
-  --border: #e3e3df;
-  --text: #1c1c1a;
-  --muted: #6b6b66;
-  --accent: #2f6fed;
-  --ok: #1f9d55;
-  --warn: #c2410c;
+  --bg: #eef0ea;
+  --sidebar: #e4e8df;
+  --panel: #fafbf7;
+  --surface: #ffffff;
+  --border: #d3dace;
+  --text: #1d2620;
+  --muted: #56615a;
+  --soft: #3e4a42;
+  --accent: #2e6b4f;
+  --accent-strong: #1f4d38;
+  --accent-tint: #e2ede5;
+  --ok: #2e8b57;
+  --warn: #b4471f;
+  --paper: #fffefa;
+  --rule: #dce5ec;
+  --margin-rule: #efc7bf;
+  --font-ui: 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-display: 'Bricolage Grotesque', 'Figtree', system-ui, sans-serif;
 }
 
 * {
@@ -19,7 +33,7 @@ body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
+  font-family: var(--font-ui);
   font-size: 14px;
 }
 
@@ -28,19 +42,315 @@ body {
   flex-direction: column;
 }
 
-.toolbar {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  padding: 10px 16px;
+/* Buttons */
+
+button {
+  font: inherit;
+  padding: 9px 12px;
+  line-height: 20px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
   background: var(--panel);
-  border-bottom: 1px solid var(--border);
+  color: var(--soft);
+  font-weight: 500;
+  cursor: pointer;
+}
+
+button:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+}
+
+button.primary:hover {
+  background: var(--accent-strong);
+  border-color: var(--accent-strong);
+  color: #fff;
+}
+
+button.active {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+.icon-only {
+  width: 40px;
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.icon-only svg {
+  width: 17px;
+  height: 17px;
+}
+
+.head-button {
+  padding: 4px 12px;
+  line-height: 20px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--soft);
+  font-size: 13px;
+}
+
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+}
+
+.icon-button[hidden] {
+  display: none;
+}
+
+.icon-button svg {
+  width: 15px;
+  height: 15px;
+}
+
+.icon-button:hover {
+  background: rgba(255, 255, 255, 0.6);
+  color: var(--text);
+}
+
+/* Workspace and sidebar */
+
+.workspace {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr) 320px;
+}
+
+body.notes-hidden .workspace {
+  grid-template-columns: 264px minmax(0, 1fr);
+}
+
+body.notes-hidden .notes {
+  display: none;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+  min-height: 0;
+  padding: 20px 14px;
+  background: var(--sidebar);
+  border-right: 1px solid var(--border);
 }
 
 .brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px;
+  font-family: var(--font-display);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  font-size: 20px;
+  letter-spacing: -0.02em;
+}
+
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+}
+
+.brand-mark svg {
+  width: 17px;
+  height: 17px;
+}
+
+.explorer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-height: 0;
+}
+
+.explorer-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+}
+
+.explorer-label {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.explorer-title {
+  padding: 8px 6px 4px;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-empty {
+  display: grid;
+  gap: 8px;
+  padding: 4px 6px;
+  color: var(--muted);
+}
+
+.explorer-empty[hidden] {
+  display: none;
+}
+
+.explorer-empty p {
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
+
+.explorer-hint {
+  font-size: 12px;
+}
+
+.explorer-tree {
+  flex: 1;
+  overflow: auto;
+  padding-bottom: 12px;
+}
+
+.tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* explorer.js sets padding-left inline for nesting depth, so only the other sides are set here. */
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding-top: 7px;
+  padding-bottom: 7px;
+  padding-right: 10px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.tree-row:hover {
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.tree-row.current {
+  background: var(--panel);
+  box-shadow: 0 1px 0 var(--border);
+}
+
+.tree-chevron {
+  display: inline-block;
+  width: 12px;
+  color: var(--muted);
+  transition: transform 0.1s;
+}
+
+.tree-empty {
+  padding: 3px 8px;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* Pen connection card, pinned to the bottom of the sidebar */
+
+.connection {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+}
+
+.connection-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.connection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  padding: 3px;
+  background: var(--bg);
+  border-radius: 10px;
+}
+
+.connection-grid button {
+  padding: 7px 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--soft);
+}
+
+.connection-grid button:hover {
+  background: var(--surface);
+}
+
+.connection-grid button.active {
+  background: var(--accent);
+  color: #fff;
+  font-weight: 600;
 }
 
 .group {
@@ -49,60 +359,21 @@ body {
   gap: 6px;
 }
 
-button {
-  font: inherit;
-  padding: 6px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--text);
-  cursor: pointer;
-}
-
-button:hover {
-  background: #f0f0ec;
-}
-
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-button.primary:hover {
-  filter: brightness(1.08);
-}
-
-button.active {
-  border-color: var(--ok);
-  color: var(--ok);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.swatch {
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border-radius: 50%;
-  border: 2px solid transparent;
-}
-
-.swatch.selected {
-  border-color: var(--text);
-}
-
 .group[hidden] {
   display: none;
+}
+
+.indicators {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 13px;
 }
 
 .indicator {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   color: var(--muted);
 }
 
@@ -118,8 +389,277 @@ button:disabled {
   background: var(--ok);
 }
 
+#load-recording {
+  width: 100%;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* While a recording plays, the button reads Stop replay and is tinted like other active buttons. */
+#load-recording.active {
+  background: var(--accent-tint);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+/* Editor toolbar */
+
+.editor {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+#colors {
+  gap: 2px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.swatch {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.swatch::before {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+
+.swatch:hover {
+  background: var(--bg);
+}
+
+.swatch.selected::before {
+  box-shadow:
+    0 0 0 2px var(--panel),
+    0 0 0 4px var(--ink);
+}
+
+.transcribe-group {
+  display: flex;
+  align-items: center;
+  background: var(--accent);
+  border-radius: 10px;
+  padding-right: 12px;
+}
+
+.transcribe-group #transcribe {
+  border: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 10px 0 0 10px;
+  background: transparent;
+  color: #fff;
+  font-weight: 600;
+}
+
+.transcribe-group #transcribe:hover {
+  background: var(--accent-strong);
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.transcribe-group .toggle {
+  padding-left: 12px;
+  color: #fff;
+  font-weight: 500;
+}
+
+.toggle input {
+  appearance: none;
+  position: relative;
+  width: 30px;
+  height: 18px;
+  margin: 0;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.toggle input::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s;
+}
+
+.toggle input:checked {
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.toggle input:checked::after {
+  transform: translateX(12px);
+}
+
+.toggle input:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+/* Tabs */
+
+.tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 14px 24px 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  flex: none;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--soft);
+}
+
+.tab[aria-selected='true'] {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--panel);
+  font-weight: 600;
+}
+
+.tab button {
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font-weight: inherit;
+}
+
+.tab button:hover {
+  background: transparent;
+  color: inherit;
+}
+
+.tab-name {
+  padding: 7px 4px 7px 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tab-name:only-child {
+  padding-right: 16px;
+}
+
+.tab-close {
+  padding: 2px 12px 2px 6px;
+  font-size: 15px;
+  opacity: 0.6;
+}
+
+.tab-close:hover {
+  opacity: 1;
+}
+
+/* Stage and page */
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+/* The outline is a box-shadow ring, not a border: pageView.js sets the page's exact size, and a
+   border would eat into the area the document is scaled to fill. */
+.page {
+  position: absolute;
+  background: #fff;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow:
+    0 0 0 1px var(--border),
+    0 2px 0 1px var(--border),
+    0 18px 40px rgba(29, 38, 32, 0.08);
+}
+
+.page[hidden] {
+  display: none;
+}
+
+/* Notebook paper, whiteboard only (main.js toggles .whiteboard). The ink canvas is transparent,
+   so the lines show through, and they're CSS only, so Save copy and transcription never see them. */
+.page.whiteboard {
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(90deg, transparent 63px, var(--margin-rule) 63px, var(--margin-rule) 65px, transparent 65px),
+    repeating-linear-gradient(180deg, transparent 0, transparent 31px, var(--rule) 31px, var(--rule) 32px);
+}
+
+/* Footer */
+
+.pagebar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 44px;
+  padding: 0 24px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.pagebar-file {
+  flex: none;
+  max-width: 30%;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .status {
-  margin-left: auto;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   color: var(--muted);
 }
 
@@ -127,79 +667,184 @@ button:disabled {
   color: var(--warn);
 }
 
-/* Explorer | editor, like VS Code. */
-.workspace {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: 250px minmax(0, 1fr) 320px;
+.pagenav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
 }
 
-.icon-button {
-  padding: 0 7px;
-  line-height: 22px;
-  border-color: transparent;
+.pagenav button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
   background: transparent;
-  color: var(--muted);
-  font-size: 15px;
 }
 
-.icon-button:hover {
-  color: var(--text);
+.pagenav button svg {
+  width: 14px;
+  height: 14px;
 }
 
-.explorer {
+#page-count {
+  padding: 0 4px;
+}
+
+.pagebar-save {
+  min-width: 70px;
+  text-align: right;
+}
+
+.pagebar-save.error {
+  color: var(--warn);
+}
+
+/* Notes panel */
+
+.notes {
   display: flex;
   flex-direction: column;
   min-height: 0;
   background: var(--panel);
-  border-right: 1px solid var(--border);
+  border-left: 1px solid var(--border);
 }
 
-.explorer-head {
+.notes-head {
   display: flex;
   align-items: center;
-  gap: 2px;
-  padding: 8px 8px 4px 14px;
+  gap: 4px;
+  padding: 18px 18px 0 22px;
 }
 
-.explorer-label {
-  flex: 1;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.explorer-title {
-  padding: 2px 14px 6px;
+.notes-file {
+  padding: 12px 22px 14px;
+  font-family: var(--font-display);
+  font-size: 26px;
   font-weight: 700;
+  letter-spacing: -0.02em;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  border-bottom: 1px solid var(--border);
 }
 
-.explorer-empty {
-  display: grid;
+.notes-blocks {
+  flex: 1;
+  overflow-y: auto;
+  padding: 18px 14px 24px;
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.notes-empty {
+  margin: 8px 8px 10px;
+  color: var(--text);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+.notes-hint {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.note-block {
+  position: relative;
+  display: flex;
   gap: 8px;
-  padding: 4px 14px;
+  align-items: flex-start;
+  margin: 2px 0;
+  padding: 8px 28px 8px 8px;
+  border-left: 3px solid transparent;
+  border-radius: 10px;
+}
+
+.note-block:hover {
+  background: var(--bg);
+}
+
+.note-block.on-page {
+  border-left-color: var(--accent);
+}
+
+.note-page {
+  flex: none;
+  margin-top: 2px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 11px;
+  line-height: 18px;
   color: var(--muted);
 }
 
-.explorer-empty[hidden] {
-  display: none;
+.note-editor {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  padding: 6px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  resize: none;
+  overflow: hidden;
 }
 
-.head-button {
-  padding: 1px 8px;
-  font-size: 12px;
+.note-delete {
+  position: absolute;
+  top: 6px;
+  right: 4px;
+  padding: 0 6px;
+  border: none;
+  background: transparent;
   color: var(--muted);
+  font-size: 16px;
+  line-height: 20px;
+  opacity: 0;
 }
 
-.explorer-hint {
-  font-size: 12px;
+.note-block:hover .note-delete,
+.note-delete:focus {
+  opacity: 1;
 }
+
+.note-block.fresh {
+  animation: note-fresh 1.6s ease-out;
+}
+
+@keyframes note-fresh {
+  from {
+    background: var(--accent-tint);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+.note-block.pending {
+  display: block;
+  color: var(--muted);
+  font-style: italic;
+  animation: note-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes note-pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* Drop overlay */
 
 .drop-overlay {
   position: fixed;
@@ -207,7 +852,7 @@ button:disabled {
   z-index: 10;
   display: grid;
   place-items: center;
-  background: rgba(47, 111, 237, 0.12);
+  background: rgba(46, 107, 79, 0.12);
   pointer-events: none;
 }
 
@@ -218,63 +863,84 @@ button:disabled {
 .drop-overlay-box {
   padding: 18px 28px;
   border: 2px dashed var(--accent);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--panel);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-size: 16px;
   font-weight: 600;
 }
 
-.explorer-empty p {
-  margin: 0 0 4px;
-  line-height: 1.45;
+/* Narrower screens keep the toolbar on one line. With every label it needs 812px, which only
+   fits from a 1400px window, so it compacts in measured steps:
+     < 1400px  slimmer side columns, Clear and Save copy icon-only   (fits down to ~1170px)
+     < 1180px  Notes icon-only, slightly smaller swatches and gaps   (fits down to ~1090px)
+     < 1090px  slimmer columns again, Transcribe icon-only            (fits down to ~970px)
+   Hidden labels stay readable to screen readers, so "Reading…" and "Saving…" are still announced. */
+@media (max-width: 1399px) {
+  .workspace {
+    grid-template-columns: 220px minmax(0, 1fr) 260px;
+  }
+  body.notes-hidden .workspace {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+  .toolbar {
+    padding: 12px 16px;
+  }
+  #clear .label,
+  #save-copy .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
-.explorer-tree {
-  flex: 1;
-  overflow: auto;
-  padding-bottom: 12px;
+@media (max-width: 1180px) {
+  .toolbar {
+    gap: 8px;
+  }
+  .swatch {
+    width: 28px;
+    height: 28px;
+  }
+  .swatch::before {
+    inset: 6px;
+  }
+  #toggle-notes .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
-.tree {
-  list-style: none;
-  margin: 0;
-  padding: 0;
+@media (max-width: 1090px) {
+  .workspace {
+    grid-template-columns: 200px minmax(0, 1fr) 240px;
+  }
+  body.notes-hidden .workspace {
+    grid-template-columns: 200px minmax(0, 1fr);
+  }
+  #transcribe .label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 
-.tree-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding-top: 3px;
-  padding-bottom: 3px;
-  padding-right: 8px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.tree-row:hover {
-  background: #f0f0ec;
-}
-
-.tree-row.current {
-  background: #e3ebfd;
-}
+/* ---- Document rendering. These draw the documents, Save copy, and notes text, not the app's
+   chrome, so the restyle leaves them as they were. ---- */
 
 .tree-label {
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.tree-chevron {
-  display: inline-block;
-  width: 12px;
-  color: var(--muted);
-  transition: transform 0.1s;
 }
 
 [aria-expanded='true'] > .tree-row .tree-chevron {
@@ -296,97 +962,15 @@ button:disabled {
 }
 
 .tree-badge.kind-pdf {
-  background: #d93025;
+  background: #c8402f;
 }
 
 .tree-badge.kind-image {
-  background: #1f9d55;
+  background: #2e8b57;
 }
 
 .tree-badge.kind-office {
   background: #b0b0aa;
-}
-
-.tree-empty {
-  padding: 3px 8px;
-  color: var(--muted);
-  font-style: italic;
-}
-
-.editor {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-
-.tabs {
-  display: flex;
-  overflow-x: auto;
-  background: #ececea;
-  border-bottom: 1px solid var(--border);
-  scrollbar-width: thin;
-}
-
-.tab {
-  display: flex;
-  align-items: center;
-  flex: none;
-  max-width: 220px;
-  border-right: 1px solid var(--border);
-  color: var(--muted);
-}
-
-.tab[aria-selected='true'] {
-  background: var(--panel);
-  color: var(--text);
-  box-shadow: inset 0 2px 0 var(--accent);
-}
-
-.tab button {
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: inherit;
-}
-
-.tab-name {
-  padding: 8px 4px 8px 12px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tab-name:only-child {
-  padding-right: 12px;
-}
-
-.tab-close {
-  padding: 2px 8px;
-  font-size: 15px;
-  opacity: 0.5;
-}
-
-.tab-close:hover {
-  opacity: 1;
-}
-
-.stage {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  background: #e4e4df;
-}
-
-.page {
-  position: absolute;
-  background: #fff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 6px 20px rgba(0, 0, 0, 0.06);
-}
-
-.page[hidden] {
-  display: none;
 }
 
 .page-content {
@@ -562,119 +1146,6 @@ button:disabled {
   color: var(--text);
 }
 
-.pagebar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 12px;
-  background: var(--panel);
-  border-top: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.pagebar button {
-  padding: 0 8px;
-  line-height: 20px;
-}
-
-.pagebar-file {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.pagebar-save {
-  min-width: 70px;
-  text-align: right;
-}
-
-.pagebar-save.error {
-  color: var(--warn);
-}
-
-/* Notes panel on the right. */
-.notes {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  background: var(--panel);
-  border-left: 1px solid var(--border);
-}
-
-body.notes-hidden .workspace {
-  grid-template-columns: 250px minmax(0, 1fr);
-}
-
-body.notes-hidden .notes {
-  display: none;
-}
-
-.notes-head {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 8px 4px 14px;
-}
-
-.notes-file {
-  padding: 2px 14px 8px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  border-bottom: 1px solid var(--border);
-}
-
-.notes-blocks {
-  flex: 1;
-  overflow-y: auto;
-  padding: 8px 8px 24px;
-  font-size: 16px;
-  line-height: 1.5;
-}
-
-.notes-empty {
-  margin: 4px 6px 8px;
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.notes-hint {
-  font-size: 12px;
-}
-
-.note-block {
-  position: relative;
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  margin: 2px 0;
-  padding: 6px 28px 6px 6px;
-  border-left: 3px solid transparent;
-  border-radius: 6px;
-}
-
-.note-block:hover {
-  background: #f4f4f1;
-}
-
-.note-block.on-page {
-  border-left-color: var(--accent);
-}
-
-.note-page {
-  flex: none;
-  padding: 0 6px;
-  margin-top: 2px;
-  border-radius: 4px;
-  font-size: 11px;
-  line-height: 18px;
-  color: var(--muted);
-}
-
 .note-body {
   flex: 1;
   min-width: 0;
@@ -714,71 +1185,52 @@ body.notes-hidden .notes {
   overflow-y: hidden;
 }
 
-.note-editor {
-  flex: 1;
-  min-width: 0;
-  font: inherit;
+/* Pen size: one toolbar button showing a dot as wide as the pen. */
+.size-dot {
+  display: block;
+  border-radius: 50%;
+  background: var(--text);
+}
+
+/* The remote's place in the explorer, moved with VOL+ and VOL-. */
+.tree-row.remote-cursor {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+/* Present mode: only the page being written on. Last in the file so it wins over the layouts above. */
+body.presenting .toolbar,
+body.presenting .sidebar,
+body.presenting .notes,
+body.presenting .tabs,
+body.presenting .pagebar {
+  display: none;
+}
+
+body.presenting .workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* Short messages from the remote, mostly for present mode where the status line is hidden. */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 44px;
+  transform: translateX(-50%);
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(29, 38, 32, 0.88);
+  color: #fff;
   font-size: 14px;
-  line-height: 1.5;
-  padding: 4px 6px;
-  border: 1px solid var(--accent);
-  border-radius: 6px;
-  resize: none;
-  overflow: hidden;
-}
-
-.note-delete {
-  position: absolute;
-  top: 4px;
-  right: 2px;
-  padding: 0 6px;
-  border: none;
-  background: transparent;
-  color: var(--muted);
-  font-size: 16px;
+  pointer-events: none;
   opacity: 0;
+  transition: opacity 0.2s;
+  z-index: 20;
 }
 
-.note-block:hover .note-delete,
-.note-delete:focus {
+.toast.shown {
   opacity: 1;
 }
-
-.note-block.fresh {
-  animation: note-fresh 1.6s ease-out;
-}
-
-@keyframes note-fresh {
-  from {
-    background: #fff4c2;
-  }
-  to {
-    background: transparent;
-  }
-}
-
-.note-block.pending {
-  display: block;
-  color: var(--muted);
-  font-style: italic;
-  animation: note-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes note-pulse {
-  50% {
-    opacity: 0.4;
-  }
-}
-
-.toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--muted);
-  cursor: pointer;
-  user-select: none;
-}
-
 /* Motion debug panel, toggled with D. Floats over the page so it works on any tab. */
 .debug {
   position: fixed;
@@ -932,12 +1384,3 @@ body.notes-hidden .notes {
   margin-top: 6px;
 }
 
-/* Narrow screens: slimmer side columns, so the page keeps room to write on. */
-@media (max-width: 1100px) {
-  .workspace {
-    grid-template-columns: 190px minmax(0, 1fr) 260px;
-  }
-  body.notes-hidden .workspace {
-    grid-template-columns: 190px minmax(0, 1fr);
-  }
-}

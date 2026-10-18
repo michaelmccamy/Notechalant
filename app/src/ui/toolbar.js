@@ -1,6 +1,16 @@
 // Toolbar wiring. Buttons only call the handlers passed in, so the logic stays in main.js.
 
 const COLORS = ['#1c1c1a', '#2f6fed', '#d93025', '#1f9d55', '#f29900'];
+const COLOR_NAMES = ['Black', 'Blue', 'Red', 'Green', 'Orange'];
+// Pen widths in CSS pixels. The second one matches the ink canvas default.
+const SIZES = [2, 4, 8, 14];
+const SIZE_NAMES = ['Fine', 'Medium', 'Thick', 'Marker'];
+
+// Buttons hold an icon and a .label span. Changing only the label keeps the icon.
+function setLabel(button, text) {
+  const label = button.querySelector('.label');
+  (label || button).textContent = text;
+}
 
 export function createToolbar(handlers) {
   const statusEl = document.getElementById('status');
@@ -25,28 +35,70 @@ export function createToolbar(handlers) {
     serial: document.getElementById('connect-serial'),
     wifi: document.getElementById('connect-wifi'),
     recording: document.getElementById('load-recording'),
+    remote: document.getElementById('connect-remote'),
+    size: document.getElementById('pen-size'),
   };
 
   const swatches = [];
   for (let i = 0; i < COLORS.length; i++) {
     const swatch = document.createElement('button');
     swatch.className = 'swatch';
-    swatch.style.background = COLORS[i];
-    swatch.title = COLORS[i];
+    // The stylesheet draws the dot and the selected ring from --ink.
+    swatch.style.setProperty('--ink', COLORS[i]);
+    swatch.title = COLOR_NAMES[i] + ' pen';
+    swatch.setAttribute('aria-label', COLOR_NAMES[i] + ' pen');
     swatch.addEventListener('click', function () {
-      selectColor(i);
-      handlers.onColor(COLORS[i]);
+      useColor(i);
     });
     colorsEl.appendChild(swatch);
     swatches.push(swatch);
   }
 
+  let colorIndex = 0;
+
   function selectColor(index) {
+    colorIndex = index;
     for (let i = 0; i < swatches.length; i++) {
       swatches[i].classList.toggle('selected', i === index);
+      swatches[i].setAttribute('aria-pressed', String(i === index));
     }
   }
   selectColor(0);
+
+  function useColor(index) {
+    selectColor(index);
+    handlers.onColor(COLORS[index]);
+  }
+
+  // The remote's 0 button. Returns the new color's name for the status line.
+  function nextColor() {
+    useColor((colorIndex + 1) % COLORS.length);
+    return COLOR_NAMES[colorIndex];
+  }
+
+  // Pen size: one button that cycles, showing a dot as wide as the pen.
+  let sizeIndex = 1;
+  const sizeDot = document.createElement('span');
+  sizeDot.className = 'size-dot';
+  buttons.size.appendChild(sizeDot);
+
+  function showSize() {
+    const px = SIZES[sizeIndex];
+    sizeDot.style.width = px + 'px';
+    sizeDot.style.height = px + 'px';
+    buttons.size.title = 'Pen size: ' + SIZE_NAMES[sizeIndex] + '. Click for the next size';
+    buttons.size.setAttribute('aria-label', buttons.size.title);
+  }
+  showSize();
+
+  // The remote's ST/REPT button, and clicking the size button. Returns the new size's name.
+  function nextSize() {
+    sizeIndex = (sizeIndex + 1) % SIZES.length;
+    showSize();
+    handlers.onSize(SIZES[sizeIndex]);
+    return SIZE_NAMES[sizeIndex];
+  }
+  buttons.size.addEventListener('click', nextSize);
 
   buttons.undo.addEventListener('click', handlers.onUndo);
   buttons.clear.addEventListener('click', handlers.onClear);
@@ -63,6 +115,7 @@ export function createToolbar(handlers) {
   buttons.bluetooth.addEventListener('click', handlers.onBluetooth);
   buttons.serial.addEventListener('click', handlers.onSerial);
   buttons.wifi.addEventListener('click', handlers.onWifi);
+  buttons.remote.addEventListener('click', handlers.onRemote);
   buttons.recording.addEventListener('click', function () {
     if (handlers.isReplaying()) {
       handlers.onStopReplay();
@@ -84,17 +137,19 @@ export function createToolbar(handlers) {
   }
 
   // source is 'relay', 'bluetooth', 'serial', 'wifi', 'recording', or null.
+  // The connection buttons keep their names; the filled one is the source that's on.
   function setActiveSource(source) {
-    buttons.relay.classList.toggle('active', source === 'relay');
-    buttons.bluetooth.classList.toggle('active', source === 'bluetooth');
-    buttons.serial.classList.toggle('active', source === 'serial');
-    buttons.wifi.classList.toggle('active', source === 'wifi');
+    for (const [name, btn] of [
+      ['relay', buttons.relay],
+      ['bluetooth', buttons.bluetooth],
+      ['serial', buttons.serial],
+      ['wifi', buttons.wifi],
+    ]) {
+      btn.classList.toggle('active', source === name);
+      btn.setAttribute('aria-pressed', String(source === name));
+    }
     buttons.recording.classList.toggle('active', source === 'recording');
-    buttons.relay.textContent = source === 'relay' ? 'Relay on' : 'Relay';
-    buttons.bluetooth.textContent = source === 'bluetooth' ? 'Bluetooth on' : 'Bluetooth';
-    buttons.serial.textContent = source === 'serial' ? 'USB on' : 'USB';
-    buttons.wifi.textContent = source === 'wifi' ? 'WiFi on' : 'WiFi';
-    buttons.recording.textContent = source === 'recording' ? 'Stop replay' : 'Load recording';
+    setLabel(buttons.recording, source === 'recording' ? 'Stop replay' : 'Load recording');
     if (source !== 'relay') {
       relayIndicators.hidden = true;
     }
@@ -122,12 +177,12 @@ export function createToolbar(handlers) {
 
   function setTranscribing(isBusy) {
     buttons.transcribe.disabled = isBusy;
-    buttons.transcribe.textContent = isBusy ? 'Reading…' : 'Transcribe';
+    setLabel(buttons.transcribe, isBusy ? 'Reading…' : 'Transcribe');
   }
 
   function setSavingCopy(isBusy) {
     buttons.saveCopy.disabled = isBusy;
-    buttons.saveCopy.textContent = isBusy ? 'Saving…' : 'Save copy';
+    setLabel(buttons.saveCopy, isBusy ? 'Saving…' : 'Save copy');
   }
 
   function setAutoCleanUp(isOn) {
@@ -138,10 +193,31 @@ export function createToolbar(handlers) {
     autoInput.checked = isOn;
   }
 
+  // The remote is its own connection, so it can be on at the same time as a pen source.
+  function setRemoteOn(isOn) {
+    buttons.remote.classList.toggle('active', isOn);
+    buttons.remote.setAttribute('aria-pressed', String(isOn));
+    setLabel(buttons.remote, isOn ? 'Remote on' : 'Remote');
+  }
+
   function setNotesShown(isShown) {
     buttons.notes.classList.toggle('active', isShown);
     buttons.notes.setAttribute('aria-pressed', String(isShown));
   }
 
-  return { setStatus, setActiveSource, setRelayStatus, setBluetoothStatus, setTranscribing, setSavingCopy, setAuto, setAutoCleanUp, setNotesShown, buttons };
+  return {
+    setStatus,
+    setActiveSource,
+    setRelayStatus,
+    setBluetoothStatus,
+    setTranscribing,
+    setSavingCopy,
+    setAuto,
+    setAutoCleanUp,
+    setNotesShown,
+    setRemoteOn,
+    nextColor,
+    nextSize,
+    buttons,
+  };
 }
