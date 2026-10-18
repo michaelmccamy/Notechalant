@@ -57,6 +57,7 @@ const TICK_MS = 250;
 // How long the pen has to stay still before new writing is typed up. Gemini answers in about
 // a second, so this wait was most of the delay. Raise it if words get read half finished.
 const TRANSCRIBE_IDLE_MS = 1200;
+const AUTO_KEY = 'notechalant.autoTranscribe';
 const AUTO_CLEANUP_KEY = 'notechalant.autoCleanUp';
 const ASK_KEY = 'notechalant.askMode';
 const NOTES_SHOWN_KEY = 'notechalant.notesShown';
@@ -398,6 +399,13 @@ function showNotes(isShown) {
 function setAsk(isOn) {
   askOn = isOn;
   motion.config.writingMode = !isOn;
+}
+
+// Clean up: rough lines, circles, and boxes snap to clean ones when the pen lifts, and after a
+// pause handwriting is swapped for typed text. Undo brings back what was drawn either way.
+function setCleanUp(isOn) {
+  ink.setSnap(isOn ? snapStroke : null);
+  notes.setAutoCleanUp(isOn);
 }
 
 function transcribeNow() {
@@ -896,9 +904,15 @@ const toolbar = createToolbar({
   },
 
   onAutoCleanUpChange: function (isOn) {
-    notes.setAutoCleanUp(isOn);
+    setCleanUp(isOn);
     saveSetting(AUTO_CLEANUP_KEY, isOn ? 'on' : 'off');
-    toolbar.setStatus(isOn ? 'Clean up on: after a pause, handwriting turns into typed text' : 'Clean up off. Enter still cleans up');
+    toolbar.setStatus(isOn ? 'Clean up on: shapes snap clean, and handwriting turns into typed text after a pause' : 'Clean up off: everything stays as drawn');
+  },
+
+  onAutoChange: function (isOn) {
+    notes.setAuto(isOn);
+    saveSetting(AUTO_KEY, isOn ? 'on' : 'off');
+    toolbar.setStatus(isOn ? 'Auto on: writing is typed up when you pause' : 'Auto off: press Enter to type up your writing');
   },
 
   onToggleNotes: function () {
@@ -960,7 +974,6 @@ const toolbar = createToolbar({
     toolbar.setStatus('Connecting to ' + (device.name || 'pen'));
     let penOnline = false;
     const connection = connectBluetooth(device, hub.onPenData, function (status) {
-      toolbar.setBluetoothStatus(status);
       if (status.connected && !penOnline) {
         hub.recalibrate();
         toolbar.setStatus('Pen connected. Hold still to calibrate');
@@ -1295,17 +1308,17 @@ if (setupName !== null) {
 
 notes.attach(whiteboard);
 activate(whiteboard);
-// Always on: writing is typed up after each pause (Enter does it now), and rough lines, circles,
-// and boxes snap clean (Undo brings back what was drawn). Each stroke is smoothed when the pen
-// lifts. The input hub keeps the lazy brush's string length in step with the D panel's slider.
-notes.setAuto(true);
-ink.setSnap(snapStroke);
+// Each stroke is smoothed when the pen lifts. The input hub keeps the lazy brush's string length
+// in step with the D panel's slider.
 ink.setSmoother(smoothStroke);
+const autoOn = loadSetting(AUTO_KEY) !== 'off';
+toolbar.setAuto(autoOn);
+notes.setAuto(autoOn);
 setAsk(loadSetting(ASK_KEY) === 'on');
 toolbar.setAsk(askOn);
 const autoCleanUpOn = loadSetting(AUTO_CLEANUP_KEY) === 'on';
 toolbar.setAutoCleanUp(autoCleanUpOn);
-notes.setAutoCleanUp(autoCleanUpOn);
+setCleanUp(autoCleanUpOn);
 showNotes(loadSetting(NOTES_SHOWN_KEY) !== 'off');
 if (loadSetting(TUTOR_KEY) === 'on') {
   setTutor(true);

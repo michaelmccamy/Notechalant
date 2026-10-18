@@ -46,11 +46,8 @@
           <div class="connection-grid single" role="group" aria-label="Pen connection">
             <button id="connect-bluetooth" title="Connect to the pen over Bluetooth (Chrome or Edge)" aria-pressed="false">Connect pen</button>
           </div>
-          <div class="group indicators" id="bluetooth-indicators" hidden>
-            <span class="indicator" id="bluetooth-pen-indicator">Pen: offline</span>
-          </div>
           <div class="connection-grid single" role="group" aria-label="Remote">
-            <button id="connect-remote" title="Connect the IR remote's Arduino over USB (Chrome or Edge). Works alongside the pen" aria-pressed="false"><span class="label">Remote</span></button>
+            <button id="connect-remote" title="Connect the IR remote's Arduino over USB (Chrome or Edge). Works alongside the pen" aria-pressed="false"><span class="label">Connect remote</span></button>
           </div>
           <button id="calibrate-screen" class="btn" title="Point at the page's four corners so the cursor goes exactly where you point (K)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" /><circle cx="12" cy="12" r="2" /></svg>
@@ -85,12 +82,14 @@
 
           <div class="toolbar-spacer"></div>
 
-          <div class="transcribe-group">
-            <label class="toggle" title="When you pause, also replace the handwriting on the page with the typed text. Enter always does. Undo brings the handwriting back">
-              <input id="auto-cleanup" type="checkbox" />
-              Clean up
-            </label>
-          </div>
+          <label class="toggle" title="Type up your writing in the notes automatically when you pause. Off: press Enter">
+            <input id="auto-transcribe" type="checkbox" checked />
+            Auto
+          </label>
+          <label class="toggle" title="Lines and shapes snap to clean ones, and handwriting turns into typed text after a pause. Undo brings back what you drew. Off: everything stays as drawn">
+            <input id="auto-cleanup" type="checkbox" />
+            Clean up
+          </label>
 
           <button id="toggle-tutor" class="btn" title="Tutor mode: checks grammar, math, and facts in what you write, and asks what you want help with" aria-pressed="false">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9l10-5 10 5-10 5z" /><path d="M6 11v5c0 1.5 2.7 3 6 3s6-1.5 6-3v-5" /><path d="M22 9v6" /></svg>

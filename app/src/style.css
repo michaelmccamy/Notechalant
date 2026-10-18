@@ -475,39 +475,12 @@ body.notes-hidden .notes {
     0 0 0 4px var(--ink);
 }
 
-.transcribe-group {
-  display: flex;
-  align-items: center;
-  background: var(--accent);
-  border-radius: 10px;
-  padding-right: 12px;
-}
-
-.transcribe-group #transcribe {
-  border: none;
-  border-right: 1px solid rgba(255, 255, 255, 0.28);
-  border-radius: 10px 0 0 10px;
-  background: transparent;
-  color: #fff;
-  font-weight: 600;
-}
-
-.transcribe-group #transcribe:hover {
-  background: var(--accent-strong);
-}
-
 .toggle {
   display: flex;
   align-items: center;
   gap: 7px;
   cursor: pointer;
   user-select: none;
-}
-
-.transcribe-group .toggle {
-  padding-left: 12px;
-  color: #fff;
-  font-weight: 500;
 }
 
 .toggle input {
@@ -535,7 +508,7 @@ body.notes-hidden .notes {
 }
 
 .toggle input:checked {
-  background: rgba(255, 255, 255, 0.4);
+  background: var(--accent);
 }
 
 .toggle input:checked::after {
@@ -543,7 +516,7 @@ body.notes-hidden .notes {
 }
 
 .toggle input:focus-visible {
-  outline: 2px solid #fff;
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 

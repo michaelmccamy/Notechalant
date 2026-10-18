@@ -21,8 +21,7 @@ export function createToolbar(handlers) {
   const relayIndicators = document.getElementById('relay-indicators');
   const relayIndicator = document.getElementById('relay-indicator');
   const penIndicator = document.getElementById('pen-indicator');
-  const bluetoothIndicators = document.getElementById('bluetooth-indicators');
-  const bluetoothPenIndicator = document.getElementById('bluetooth-pen-indicator');
+  const autoInput = document.getElementById('auto-transcribe');
 
   const buttons = {
     relay: document.getElementById('connect-relay'),
@@ -110,6 +109,9 @@ export function createToolbar(handlers) {
   askInput.addEventListener('change', function () {
     handlers.onAskChange(askInput.checked);
   });
+  autoInput.addEventListener('change', function () {
+    handlers.onAutoChange(autoInput.checked);
+  });
   autoCleanUpInput.addEventListener('change', function () {
     handlers.onAutoCleanUpChange(autoCleanUpInput.checked);
   });
@@ -155,9 +157,7 @@ export function createToolbar(handlers) {
     if (source !== 'relay') {
       relayIndicators.hidden = true;
     }
-    if (source !== 'bluetooth') {
-      bluetoothIndicators.hidden = true;
-    }
+    buttons.bluetooth.textContent = source === 'bluetooth' ? 'Disconnect pen' : 'Connect pen';
   }
 
   // status is { relay, pens, rate } from connectRelay.
@@ -170,13 +170,6 @@ export function createToolbar(handlers) {
     penIndicator.classList.toggle('ok', penOnline);
   }
 
-  // status is { connected, rate } from connectBluetooth.
-  function setBluetoothStatus(status) {
-    bluetoothIndicators.hidden = false;
-    bluetoothPenIndicator.textContent = status.connected ? 'Pen: online, ' + status.rate + '/s' : 'Pen: reconnecting';
-    bluetoothPenIndicator.classList.toggle('ok', status.connected);
-  }
-
   function setSavingCopy(isBusy) {
     buttons.saveCopy.disabled = isBusy;
     setLabel(buttons.saveCopy, isBusy ? 'Saving…' : 'Save copy');
@@ -184,6 +177,10 @@ export function createToolbar(handlers) {
 
   function setAsk(isOn) {
     askInput.checked = isOn;
+  }
+
+  function setAuto(isOn) {
+    autoInput.checked = isOn;
   }
 
   function setAutoCleanUp(isOn) {
@@ -194,7 +191,7 @@ export function createToolbar(handlers) {
   function setRemoteOn(isOn) {
     buttons.remote.classList.toggle('active', isOn);
     buttons.remote.setAttribute('aria-pressed', String(isOn));
-    setLabel(buttons.remote, isOn ? 'Remote on' : 'Remote');
+    setLabel(buttons.remote, isOn ? 'Disconnect remote' : 'Connect remote');
   }
 
   function setEraser(isOn) {
@@ -216,7 +213,7 @@ export function createToolbar(handlers) {
     setStatus,
     setActiveSource,
     setRelayStatus,
-    setBluetoothStatus,
+    setAuto,
     setSavingCopy,
     setAutoCleanUp,
     setAsk,
