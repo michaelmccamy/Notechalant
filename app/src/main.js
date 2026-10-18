@@ -9,6 +9,8 @@
 //   tutor mode              ->  each new note or drawing, plus a picture of the page  ->  tutor review  ->  card under it
 //   Save copy               ->  buildCopy (document + ink)  ->  new file next to the original
 
+// Up front, so math never shows twice (see notes/katex.js).
+import 'katex/dist/katex.min.css';
 import { createInkCanvas } from './ink/inkCanvas.js';
 import { createTextLayer } from './ink/textLayer.js';
 import { snapStroke, snapHeld, strokeBox, isClosedLoop, underlineOf } from './ink/shapes.js';
