@@ -18,6 +18,11 @@
 const int IR_PIN = 11;
 const int LED_PIN = 13;
 const long BAUD_RATE = 115200;
+// Some presses decode twice. A second copy of the same button this soon after is dropped, or a
+// toggle would flip on and straight back off.
+const unsigned long SAME_BUTTON_MS = 300;
+uint8_t lastCode = 0;
+unsigned long lastPressMs = 0;
 
 // Remote code -> the name the app understands. Names are listed in app/src/input/remote.js.
 // Buttons not listed here are printed as "OTHER" with their code, so new ones are easy to add.
@@ -60,7 +65,14 @@ void loop() {
   uint8_t code = IrReceiver.decodedIRData.command;
   // Holding a button sends repeats. Each press should do one thing, so they're skipped.
   // Code 0 with no protocol is noise, like sunlight on the sensor.
+  unsigned long now = millis();
+  bool isDouble = code == lastCode && now - lastPressMs < SAME_BUTTON_MS;
   if (!isRepeat && IrReceiver.decodedIRData.protocol != UNKNOWN) {
+    // Timed from the last signal of any kind, so holding a button doesn't let a copy through.
+    lastCode = code;
+    lastPressMs = now;
+  }
+  if (!isRepeat && !isDouble && IrReceiver.decodedIRData.protocol != UNKNOWN) {
     Serial.print("{\"type\":\"remote\",\"button\":\"");
     Serial.print(buttonFor(code));
     Serial.print("\",\"code\":");
