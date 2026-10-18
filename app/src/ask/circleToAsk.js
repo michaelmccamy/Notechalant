@@ -139,7 +139,7 @@ export function createCircleToAsk(stageEl, pageEl, handlers) {
     cardEl.style.top = top + 'px';
   }
 
-  return { ask, isOpen, dismiss };
+  return { ask, capture, isOpen, dismiss };
 }
 
 // The full explanation: /api/explain, a step-by-step walkthrough with the answer.

@@ -318,8 +318,8 @@ ink.setStrokeListener(function (stroke) {
   }
 });
 
-// Tutor on: hints and a conversation in the notes for follow-ups. Tutor off: the full
-// step-by-step explanation, added to the notes as a study sheet entry.
+// Tutor on: hints and a conversation in the notes for follow-ups, with no card over the page.
+// Tutor off: the full step-by-step explanation in a card, added to the notes as a study sheet entry.
 async function askAbout(box, marked) {
   captureInk();
   const tab = activeTab;
@@ -327,17 +327,13 @@ async function askAbout(box, marked) {
   notes.skipLastStroke(tab, page);
   if (tutorIsOn) {
     tell('Asking the tutor about what you ' + marked + '…');
-    const answer = await circleToAsk.ask(
-      box,
-      async function (pictures) {
-        const question = 'I ' + marked + ' this. Walk me through how to answer it, starting with a hint rather than the answer.';
-        const reply = await notes.askAboutPicture(tab, page, question, pictures.image, pictures.thumb);
-        return { about: 'Hint from the tutor', text: reply };
-      },
-      'Asking the tutor…',
-    );
-    if (answer !== null) {
-      tell('The tutor answered. Ask follow-ups under it in Notes');
+    try {
+      const pictures = await circleToAsk.capture(box);
+      const question = 'I ' + marked + ' this. Walk me through how to answer it, starting with a hint rather than the answer.';
+      await notes.askAboutPicture(tab, page, question, pictures.image, pictures.thumb);
+      tell('The tutor answered in Notes. Ask follow-ups under it');
+    } catch (err) {
+      toolbar.setStatus(err.message, true);
     }
     return;
   }
