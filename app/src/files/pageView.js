@@ -73,5 +73,7 @@ export function createPageView({ onPrev, onNext }) {
     return scale;
   }
 
-  return { show, layout, getScale, stage };
+  // `content` is the shown page at its own size (before scaling), which the tutor takes a
+  // picture of.
+  return { show, layout, getScale, stage, content: contentEl };
 }

@@ -1,14 +1,21 @@
 // A file's notes, as plain data. No DOM or storage in here, so it all runs under `npm test`.
 //
-//   { blocks: [{ id, text, page, createdAt, box, strokes, edited }], transcribed: { pageIndex: strokeCount } }
+//   { blocks: [{ id, text, page, createdAt, box?, strokes?, edited?, tutor?, sketch?, asked? }],
+//     transcribed: { pageIndex: strokeCount } }
 //
 // Ink stays on the page after it's transcribed. `transcribed[page]` counts how many of that
 // page's strokes (oldest first) have been sent already, so only newer strokes go next time.
 //
 // A block remembers where its ink is: `box` (page units) and `strokes` (indexes into the page's
 // stroke list). Writing added later on the same line joins that block, and the whole line is
-// read again, so "7x + 4" followed by "=" becomes one note, "7x + 4 =". Blocks edited by hand
-// (`edited`) are never rewritten.
+// read again, so "7x + 4" followed by "=" becomes one note, "7x + 4 =". Blocks whose text came
+// from somewhere other than the ink are never rewritten (see canRewrite).
+//
+// In tutor mode a block can also have `tutor` (the tutor's feedback, see tutor/tutorData.js),
+// `sketch` (a thumbnail of the drawing, for drawings with no words, whose text is ''), and
+// `asked` (a question typed about the page, rather than handwriting).
+
+import { packTutor, unpackTutor, validSketch } from '../tutor/tutorData.js';
 
 // How far beside a line new writing can start and still count as the same line, in line heights.
 const LINE_REACH = 1.5;
@@ -60,16 +67,34 @@ export function strokesBox(strokes) {
   return x0 === Infinity ? null : { x0, y0, x1, y1 };
 }
 
+// Whether more writing on a block's line may rewrite its text. Not when the text no longer comes
+// straight from the ink: edited by hand or by a tutor fix (the ink still shows the old version,
+// so reading it again would undo the change), a typed question, a drawing, or a note with a
+// conversation with the tutor that would stop making sense. Blocks from before boxes existed
+// have no ink to go by either.
+export function canRewrite(block) {
+  return Boolean(
+    block.box &&
+      block.strokes &&
+      block.strokes.length > 0 &&
+      block.text !== '' &&
+      !block.edited &&
+      !block.asked &&
+      !block.sketch &&
+      !(block.tutor && block.tutor.thread.length > 0),
+  );
+}
+
 // Blocks on `page` that writing inside `box` continues: they share most of a line's height and
-// sit within LINE_REACH line heights to the left or right. Oldest first. Hand-edited blocks and
-// blocks saved before blocks had boxes are left out.
+// sit within LINE_REACH line heights to the left or right. Oldest first. Only blocks that
+// canRewrite are considered.
 export function lineBlocks(notes, page, box) {
   if (box === null) {
     return [];
   }
   return notes.blocks
     .filter(function (block) {
-      if (block.page !== page || !block.box || block.edited || !block.strokes || block.strokes.length === 0) {
+      if (block.page !== page || !canRewrite(block)) {
         return false;
       }
       const b = block.box;
@@ -99,19 +124,21 @@ export function addBlock(notes, text, page, now, ink) {
   return block;
 }
 
-// Saving empty text deletes the block, so clearing a block in the editor removes it. An edited
-// block keeps its text from then on: writing on its line starts a new block instead.
+// Saving empty text deletes the block, so clearing a block in the editor removes it. A drawing
+// is the exception: clearing its caption leaves the drawing. An edited block keeps its text from
+// then on: writing on its line starts a new block instead.
 export function editBlock(notes, id, text) {
-  if (text.trim() === '') {
+  const block = findBlock(notes, id);
+  if (block === null) {
+    return;
+  }
+  // A drawing's caption can be cleared without losing the drawing.
+  if (text.trim() === '' && !block.sketch) {
     removeBlock(notes, id);
     return;
   }
-  for (const block of notes.blocks) {
-    if (block.id === id) {
-      block.text = text;
-      block.edited = true;
-    }
-  }
+  block.text = text.trim() === '' ? '' : text;
+  block.edited = true;
 }
 
 export function removeBlock(notes, id) {
@@ -133,6 +160,17 @@ export function contextTail(notes, maxChars, skipIds) {
   return text.length > maxChars ? text.slice(text.length - maxChars) : text;
 }
 
+// The notes written before one block, as context for the tutor looking at that block.
+export function contextBefore(notes, id, maxChars) {
+  const blocks = orderedBlocks(notes);
+  const index = blocks.findIndex((block) => block.id === id);
+  return contextTail({ blocks: index < 0 ? blocks : blocks.slice(0, index) }, maxChars);
+}
+
+export function findBlock(notes, id) {
+  return notes.blocks.find((block) => block.id === id) || null;
+}
+
 // Markdown for Copy and Export. Multi-page files get a heading per page.
 export function toMarkdown(title, notes, pageCount) {
   const lines = ['# ' + title, ''];
@@ -142,14 +180,20 @@ export function toMarkdown(title, notes, pageCount) {
       lines.push('## Page ' + (block.page + 1), '');
       lastPage = block.page;
     }
-    lines.push(block.text, '');
+    lines.push(block.text === '' ? '*(drawing)*' : block.asked ? '**Q:** ' + block.text : block.text, '');
   }
   return lines.join('\n');
 }
 
 // Saved form. Anything malformed is dropped instead of breaking the file open.
 export function packNotes(file, notes) {
-  return { version: 1, file: file, blocks: notes.blocks, transcribed: notes.transcribed };
+  const blocks = notes.blocks.map(function (block) {
+    if (!block.tutor) {
+      return block;
+    }
+    return Object.assign({}, block, { tutor: packTutor(block.tutor) });
+  });
+  return { version: 1, file: file, blocks: blocks, transcribed: notes.transcribed };
 }
 
 export function unpackNotes(data) {
@@ -170,8 +214,21 @@ export function unpackNotes(data) {
         if (b.edited === true) {
           block.edited = true;
         }
+        const tutor = unpackTutor(b.tutor);
+        if (tutor !== null) {
+          block.tutor = tutor;
+        }
+        const sketch = validSketch(b.sketch);
+        if (sketch !== null) {
+          block.sketch = sketch;
+        }
+        if (b.asked === true) {
+          block.asked = true;
+        }
         return block;
-      });
+      })
+      // A block needs words or a drawing to show.
+      .filter((block) => block.text !== '' || block.sketch);
   }
   if (data.transcribed && typeof data.transcribed === 'object') {
     for (const page of Object.keys(data.transcribed)) {

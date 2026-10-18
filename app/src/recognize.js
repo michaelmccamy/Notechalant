@@ -7,10 +7,17 @@
 // because more was written on it, so letters it already got right stay the same. Also optional.
 
 export async function recognizeImage(pngDataUrl, context, previous) {
-  const response = await fetch('/api/recognize', {
+  const body = await postApi('/api/recognize', { image: pngDataUrl, context: context || '', previous: previous || '' }, 'Recognition');
+  return cleanTranscription(body.text);
+}
+
+// POSTs JSON to one of our server's endpoints and returns the JSON answer. Errors come back as
+// messages a person can act on. `what` names the feature in them ("Recognition", "Tutor").
+export async function postApi(path, payload, what) {
+  const response = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ image: pngDataUrl, context: context || '', previous: previous || '' }),
+    body: JSON.stringify(payload),
   });
 
   let body = null;
@@ -21,16 +28,16 @@ export async function recognizeImage(pngDataUrl, context, previous) {
   }
 
   if (!response.ok) {
-    let message = 'Recognition failed (' + response.status + ')';
+    let message = what + ' failed (' + response.status + ')';
     if (body !== null && body.error) {
       message = body.error;
     } else if (response.status === 404 || response.status >= 500) {
-      // Vite's proxy answers this way when the recognition server isn't running.
-      message = 'Recognition server not reachable. Run npm start in server/';
+      // Vite's proxy answers this way when the server isn't running (or is an old one).
+      message = what + ' server not reachable. Run npm start in server/';
     }
     throw new Error(message);
   }
-  return cleanTranscription(body.text);
+  return body || {};
 }
 
 const NOTHING = '(nothing recognized)';

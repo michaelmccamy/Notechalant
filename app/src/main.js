@@ -2,9 +2,11 @@
 //
 //   relay / bluetooth / serial / wifi / replay  ->  hub.onPenData(sample)  ->  motion.update  ->  ink.moveBy
 //   mouse                   ->  ink.moveTo
+//   IR remote (USB)         ->  onRemoteButton  ->  colors, sizes, pages, tabs, explorer, present mode
 //   explorer / tabs         ->  openDocument  ->  pageView (one page, ink canvas on top)
 //   ink changes             ->  captureInk (page units)  ->  saved to .notechalant/ in the folder
 //   pen pauses              ->  notes controller  ->  recognize new strokes  ->  that file's notes
+//   tutor mode              ->  each new note or drawing, plus a picture of the page  ->  tutor review  ->  card under it
 //   Save copy               ->  buildCopy (document + ink)  ->  new file next to the original
 
 import { createInkCanvas } from './ink/inkCanvas.js';
@@ -16,10 +18,13 @@ import { connectWebSocket } from './input/websocket.js';
 import { connectRelay, RELAY_URL } from './input/relay.js';
 import { bluetoothSupported, connectBluetooth, requestPen } from './input/bluetooth.js';
 import { playRecording } from './input/replay.js';
+import { connectRemote } from './input/remote.js';
 import { createMotion } from './motion/index.js';
 import { createToolbar } from './ui/toolbar.js';
 import { recognizeImage } from './recognize.js';
 import { createNotesController } from './notes/notesController.js';
+import { reviewNote, askTutor } from './tutor/tutorClient.js';
+import { snapshotPage } from './tutor/pageSnapshot.js';
 import { createWhiteboard, openDocument } from './files/documents.js';
 import { createPageView } from './files/pageView.js';
 import { createExplorer } from './files/explorer.js';
@@ -47,6 +52,7 @@ const TICK_MS = 250;
 const TRANSCRIBE_IDLE_MS = 2000;
 const AUTO_KEY = 'notechalant.autoTranscribe';
 const NOTES_SHOWN_KEY = 'notechalant.notesShown';
+const TUTOR_KEY = 'notechalant.tutor';
 
 const canvas = document.getElementById('ink');
 const ink = createInkCanvas(canvas);
@@ -144,6 +150,15 @@ const notes = createNotesController({
   },
   goToPage: goToPage,
   recognize: recognizeImage,
+  tutor: { review: reviewNote, ask: askTutor },
+  // The tutor sees the page only while it's the one on screen, since that's what gets pictured.
+  snapshot: function (tab, page) {
+    if (tab !== activeTab || tab.page !== page) {
+      return Promise.resolve(null);
+    }
+    captureInk();
+    return snapshotPage(tab.doc, page, pageView.content, tab.ink[page]);
+  },
   idleMs: TRANSCRIBE_IDLE_MS,
   onStatus: function (text, isError) {
     toolbar.setStatus(text, isError);
@@ -157,6 +172,16 @@ function showNotes(isShown) {
   document.body.classList.toggle('notes-hidden', !isShown);
   toolbar.setNotesShown(isShown);
   saveSetting(NOTES_SHOWN_KEY, isShown ? 'on' : 'off');
+}
+
+// Tutor feedback shows in the notes panel, so turning the tutor on opens the panel too.
+function setTutor(isOn) {
+  notes.setTutor(isOn);
+  toolbar.setTutorOn(isOn);
+  saveSetting(TUTOR_KEY, isOn ? 'on' : 'off');
+  if (isOn) {
+    showNotes(true);
+  }
 }
 
 // Copies the canvas strokes into the active tab if they changed since last time.
@@ -580,6 +605,38 @@ const toolbar = createToolbar({
     ink.setColor(color);
   },
 
+  onSize: function (width) {
+    ink.setWidth(width);
+  },
+
+  // The remote runs alongside whichever pen source is on, so it isn't part of `active`.
+  onRemote: async function () {
+    if (remote !== null) {
+      const previous = remote;
+      remote = null;
+      toolbar.setRemoteOn(false);
+      await previous.disconnect();
+      toolbar.setStatus('Remote disconnected');
+      return;
+    }
+    try {
+      const connection = await connectRemote(onRemoteButton, function () {
+        if (remote === connection) {
+          remote = null;
+          toolbar.setRemoteOn(false);
+          toolbar.setStatus('Remote disconnected');
+        }
+      }, onRemoteOther);
+      remote = connection;
+      toolbar.setRemoteOn(true);
+      toolbar.setStatus('Remote connected. Press a button on it');
+    } catch (err) {
+      // Closing the port picker without choosing also lands here.
+      const busy = err.name === 'NetworkError' || err.name === 'InvalidStateError';
+      toolbar.setStatus(busy ? "Couldn't open the remote's port. Close the Arduino Serial Monitor and try again" : err.message, true);
+    }
+  },
+
   onUndo: function () {
     ink.undo();
   },
@@ -603,6 +660,12 @@ const toolbar = createToolbar({
 
   onToggleNotes: function () {
     showNotes(document.body.classList.contains('notes-hidden'));
+  },
+
+  onToggleTutor: function () {
+    const isOn = toolbar.buttons.tutor.getAttribute('aria-pressed') !== 'true';
+    setTutor(isOn);
+    toolbar.setStatus(isOn ? 'Tutor on. New writing gets checked, and you can ask about any note' : 'Tutor off');
   },
 
   // The relay keeps reconnecting on its own, so it only ends when the button is clicked again.
@@ -767,6 +830,121 @@ function saveSetting(key, value) {
   }
 }
 
+// ---- IR remote and present mode ----
+//
+// Present mode hides everything but the page, so the screen is just the writing. The remote's
+// buttons are listed in firmware/remote/README.md. VOL+ and VOL- move through the explorer,
+// which is hidden while presenting, so they only work outside present mode.
+
+let remote = null;
+let presenting = false;
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+
+function setPresenting(isOn) {
+  presenting = isOn;
+  document.body.classList.toggle('presenting', isOn);
+  if (!isOn) {
+    clearTimeout(toastTimer);
+    toastEl.classList.remove('shown');
+  }
+  // A file picked in the explorer may still be opening, so the message doesn't name it.
+  tell(isOn ? 'Presenting. Press >|| or Esc to leave' : 'Left present mode');
+}
+
+// Status line, plus a toast while presenting, since the toolbar is hidden then.
+function tell(text) {
+  toolbar.setStatus(text);
+  if (!presenting) {
+    return;
+  }
+  toastEl.textContent = text;
+  toastEl.classList.add('shown');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function () {
+    toastEl.classList.remove('shown');
+  }, 1600);
+}
+
+// Moves to the tab before (-1) or after (+1) the active one, wrapping around the ends.
+function switchTab(delta) {
+  const index = tabs.indexOf(activeTab);
+  const next = tabs[(index + delta + tabs.length) % tabs.length];
+  if (next !== activeTab) {
+    activate(next);
+  }
+  return next;
+}
+
+// Anything the UNO prints that isn't a known press: its boot line, or a button the sketch
+// doesn't map yet ("OTHER" with its code). Shown so you can see the remote is getting through.
+function onRemoteOther(line) {
+  console.log('[remote]', line);
+  tell('Remote sent: ' + line.slice(0, 80));
+}
+
+function onRemoteButton(button) {
+  console.log('[remote]', button);
+  switch (button) {
+    case 'COLOR':
+      tell('Color: ' + toolbar.nextColor());
+      break;
+    case 'SIZE':
+      tell('Size: ' + toolbar.nextSize());
+      break;
+    case 'PREV_PAGE':
+    case 'NEXT_PAGE':
+      goToPage(activeTab.page + (button === 'NEXT_PAGE' ? 1 : -1));
+      if (activeTab.doc.pageCount > 0) {
+        tell('Page ' + (activeTab.page + 1) + ' of ' + activeTab.doc.pageCount);
+      }
+      break;
+    case 'PREV_TAB':
+    case 'NEXT_TAB':
+      tell(tabs.length > 1 ? switchTab(button === 'NEXT_TAB' ? 1 : -1).name : 'Only one tab open');
+      break;
+    case 'RECENTER':
+      ink.centerCursor();
+      tell('Cursor recentered');
+      break;
+    case 'CLEAR':
+      ink.clear();
+      tell('Page cleared. Ctrl+Z brings it back');
+      break;
+    case 'PRESENT':
+      onPresentButton();
+      break;
+    case 'EXPLORER_UP':
+    case 'EXPLORER_DOWN':
+      onExplorerButton(button === 'EXPLORER_DOWN' ? 1 : -1);
+      break;
+  }
+}
+
+// >|| leaves present mode, or enters it. Outside present mode, a highlighted file in the explorer
+// opens first and is what gets presented. A highlighted folder opens or closes instead.
+function onPresentButton() {
+  if (presenting) {
+    setPresenting(false);
+    return;
+  }
+  const opened = explorer.openCursor();
+  if (opened === 'opened' || opened === 'closed') {
+    tell('Folder ' + opened + '. VOL+ and VOL- to pick a file');
+    return;
+  }
+  setPresenting(true);
+}
+
+function onExplorerButton(delta) {
+  if (presenting) {
+    tell('Press >|| to leave present mode first');
+    return;
+  }
+  const name = explorer.moveCursor(delta);
+  tell(name === null ? 'Open a folder to move through its files' : name + '. Press >|| to open');
+}
+
 // Keyboard shortcuts.
 // Space  hold for pen down (stands in for the button)
 // Page Up / Page Down  previous or next page
@@ -774,6 +952,7 @@ function saveSetting(key, value) {
 // Ctrl/Cmd+S  save a copy with the ink on it
 // C  recenter cursor
 // R  recalibrate motion
+// P  enter or leave present mode, Esc leaves it
 // Enter  transcribe new writing on this page now
 // None of them fire while typing in a text field, like the note editor.
 window.addEventListener('keydown', function (event) {
@@ -797,6 +976,10 @@ window.addEventListener('keydown', function (event) {
   } else if (event.key === 'r' || event.key === 'R') {
     hub.recalibrate();
     toolbar.setStatus('Recalibrating. Hold still');
+  } else if (event.key === 'p' || event.key === 'P') {
+    setPresenting(!presenting);
+  } else if (event.key === 'Escape' && presenting) {
+    setPresenting(false);
   } else if (event.key === 'Enter' && !(event.target instanceof HTMLButtonElement)) {
     event.preventDefault();
     toolbar.buttons.transcribe.click();
@@ -822,6 +1005,9 @@ const autoOn = loadSetting(AUTO_KEY) !== 'off';
 toolbar.setAuto(autoOn);
 notes.setAuto(autoOn);
 showNotes(loadSetting(NOTES_SHOWN_KEY) !== 'off');
+if (loadSetting(TUTOR_KEY) === 'on') {
+  setTutor(true);
+}
 ink.centerCursor();
 ink.hideCursor();
 

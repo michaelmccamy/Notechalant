@@ -7,6 +7,7 @@
 
 import http from 'node:http';
 import { recognize, hasConfig } from './recognize.mjs';
+import { tutor } from './tutor.mjs';
 
 // Load server/.env if it exists (Node 20.12 or newer).
 try {
@@ -43,20 +44,25 @@ function readBody(req) {
   });
 }
 
-async function handleRecognize(req, res) {
+// handler is recognize or tutor. Both answer a missing or unreadable body with a 400.
+async function handleJson(req, res, handler) {
   let body = null;
   try {
     body = JSON.parse(await readBody(req));
   } catch (err) {
-    // recognize() answers a missing image with a 400.
+    // Left as null for the handler to reject.
   }
-  const result = await recognize(body, process.env);
+  const result = await handler(body, process.env);
   sendJson(res, result.status, result.body);
 }
 
 const server = http.createServer(function (req, res) {
   if (req.method === 'POST' && req.url === '/api/recognize') {
-    handleRecognize(req, res);
+    handleJson(req, res, recognize);
+    return;
+  }
+  if (req.method === 'POST' && req.url === '/api/tutor') {
+    handleJson(req, res, tutor);
     return;
   }
   if (req.method === 'GET' && req.url === '/api/health') {

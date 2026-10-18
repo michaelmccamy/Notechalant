@@ -18,6 +18,7 @@ import {
   shouldAutoTranscribe,
   strokesBox,
   lineBlocks,
+  canRewrite,
 } from '../src/notes/noteData.js';
 import { parseMarkdown, hasMath } from '../src/notes/markdown.js';
 import { cleanTranscription } from '../src/recognize.js';
@@ -118,6 +119,18 @@ test('hand-edited notes and notes saved before boxes existed are never rewritten
   const old = emptyNotes();
   addBlock(old, 'from before', 0, 5);
   assert.deepEqual(lineBlocks(old, 0, equalsSign), []);
+});
+
+test('tutor notes: a review alone can grow, but conversations, questions, drawings, and fixes stay', function () {
+  const equalsSign = { x0: 970, y0: 395, x1: 1075, y1: 485 };
+  const review = { review: { verdict: 'correct', message: 'ok', issues: [] }, thread: [], pending: false, error: '' };
+  const talked = { review: null, thread: [{ role: 'student', text: 'why?' }], pending: false, error: '' };
+  assert.equal(lineBlocks(withLine(equation, { tutor: review }).notes, 0, equalsSign).length, 1, 'review only');
+  assert.equal(lineBlocks(withLine(equation, { tutor: talked }).notes, 0, equalsSign).length, 0, 'conversation');
+  assert.equal(lineBlocks(withLine(equation, { asked: true }).notes, 0, equalsSign).length, 0, 'typed question');
+  assert.equal(lineBlocks(withLine(equation, { text: '', sketch: 'data:image/png;base64,AAAA' }).notes, 0, equalsSign).length, 0, 'drawing');
+  assert.equal(canRewrite(withLine(equation, { edited: true }).block), false, 'edited, by hand or by a tutor fix');
+  assert.equal(canRewrite(withLine(equation).block), true);
 });
 
 test('writing that bridges two pieces of the same line returns both, oldest first', function () {
