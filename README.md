@@ -73,6 +73,60 @@ Open the URL Vite prints. The app forwards `/api` requests to the server on port
 
 If the pen drops out, the app reconnects on its own. On a Mac, Chrome needs Bluetooth permission: **System Settings > Privacy & Security > Bluetooth**, turn on Chrome, then quit and reopen it.
 
+## Buttons
+
+**Toolbar**, left to right
+
+| Button | Does |
+|---|---|
+| Colors | Pick the pen color. Picking one also turns the eraser off |
+| Size | Next pen size |
+| **Ask** (switch) | Circling or underlining asks about what you marked. The pen aims like a laser pointer while it's on |
+| Eraser | Drag over strokes or typed words to remove them (**E**) |
+| Undo | Undo the last change (**Ctrl/Cmd+Z**) |
+| Clear | Clear the page. Undo brings it back |
+| Save copy | Save a new file with the ink on it. The original isn't changed (**Ctrl/Cmd+S**) |
+| **Auto** (switch) | Type up writing into the notes when you pause. Off: press **Enter** |
+| **Clean up** (switch) | Snap shapes clean and replace handwriting with typed text. Off: everything stays as drawn |
+| Tutor | Hints instead of answers, and feedback on what you write |
+| Notes | Show or hide the Notes panel |
+
+**Sidebar**
+
+| Button | Does |
+|---|---|
+| Open Folder / Open File | Open something to write on. Or drop a file or folder on the page |
+| Connect pen | Connect the pen over Bluetooth. Says Disconnect pen while connected |
+| Connect remote | Connect the IR remote's Arduino over USB. Says Disconnect remote while connected |
+| Calibrate screen | Point at the page's four corners, tapping the pad at each (**K**) |
+
+**Notes panel**
+
+| Button | Does |
+|---|---|
+| Copy | Copy the notes as Markdown |
+| Export .md | Download the notes as a Markdown file |
+| Clear | Delete every note for this file (click twice). The ink stays on the page |
+| Ask tutor | Under each note while Tutor is on: ask about that note |
+| Ask the tutor about this page | The box at the bottom while Tutor is on |
+
+**IR remote** (after **Connect remote**)
+
+| Button | Does |
+|---|---|
+| 0 | Next pen color |
+| ST/REPT | Next pen size |
+| \|<< / >>\| | Previous or next page |
+| UP / DOWN | Previous or next tab |
+| EQ | Recenter the cursor |
+| FUNC/STOP | Clear the page |
+| >\|\| | Enter or leave present mode. In the explorer, open the highlighted file |
+| VOL+ / VOL- | Move up or down the file explorer, outside present mode |
+| 1 / 2 / 3 | Clean up, Ask, or Tutor on or off |
+| 4 / 5 | Pick the first or second quick answer to the tutor's newest question |
+| 6 | Calibrate the screen. While calibrating, 6 marks each corner |
+| 7 | Auto on or off |
+
 ## Controls
 
 | Pen | Does |
