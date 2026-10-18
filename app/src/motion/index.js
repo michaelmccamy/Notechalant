@@ -1,20 +1,30 @@
 // Owned by CpE 2. Replace the inside freely, but keep the exported shape so the rest of
 // the app keeps working. See motion/README.md for the contract.
 //
-// Per sample: gyro rates -> subtract bias -> project onto the screen directions ->
-// One Euro filter -> deadzone -> pixels. The bias is the average of the first
-// calibrationMs of samples, while the user holds the pen still. Every setting is read
-// from `config` on each sample, so the debug panel (D key) can change them live.
+// Per sample: gyro rates -> subtract bias -> screen directions -> One Euro filter ->
+// deadzone -> pixels. The bias is the average of the first calibrationMs of samples, while the
+// user holds the pen still. Every setting is read from `config` on each sample, so the debug
+// panel (D key) can change them live.
 //
-// The screen directions are vectors in gyro space, not single axes, because the sensor
-// sits at an angle in the pen: a sweep to the right turns gz but also gx and gy. A plain
-// axis is still possible, [0, 0, 1] is gz alone. startAxisWizard() measures them.
+// Screen directions, two ways:
+//   Roll compensation (default). The accelerometer gives "up" (gravity), tracked as the pen
+//   moves. Left and right is turning around up, and up and down is turning around the
+//   sideways axis, up x penAxis, where penAxis is the way the pen points in sensor axes.
+//   Both follow gravity, so rolling the pen in the hand doesn't mix them up.
+//   Fixed vectors. xVector and yVector are fixed directions in sensor axes. Simpler, but
+//   correct only for the grip they were measured with.
+// startAxisWizard() measures penAxis and horizontalSign, and the fixed vectors too.
 
 export const AXES = ['gx', 'gy', 'gz'];
 
 export const DEFAULT_CONFIG = {
-  // Unit vectors (gx, gy, gz) for the rotation that moves the cursor right, and down.
-  // Measured on the real pen from left, right, up, and down sweeps.
+  rollCompensation: true,
+  // Roll compensation: the way the pen points, as a unit vector in sensor axes (gx, gy, gz),
+  // and 1 or -1 to flip left and right. Measured on the breadboard pen from a down stroke.
+  penAxis: [0.31, 0.89, -0.34],
+  horizontalSign: 1,
+  // Fixed vectors: unit vectors (gx, gy, gz) for the rotation that moves the cursor right,
+  // and down. Measured on the real pen from left, right, up, and down sweeps.
   xVector: [0.47, -0.43, 0.77],
   yVector: [-0.8, -0.55, 0.23],
   pixelsPerDegree: 12, // sensitivity
@@ -66,10 +76,24 @@ export function createOneEuro() {
   return { filter, reset };
 }
 
-// Axis wizard: each tilt step lasts WIZARD_STEP_MS, and a tilt smaller than
+// Calibration only accepts a window where the pen was really still: every axis must stay
+// within this standard deviation, or the window starts over. A still pen measures about
+// 0.4 deg/s, while a moving one measured from 3 up to 18 deg/s off as bias and made the cursor drift.
+const STILL_MAX_STD_DPS = 2.5;
+
+// Axis wizard: each line step lasts WIZARD_STEP_MS, and a line turning the pen less than
 // MIN_TILT_DEG means the user didn't move, so the wizard fails instead of guessing.
 const WIZARD_STEP_MS = 2000;
 const MIN_TILT_DEG = 5;
+
+// Gravity is the accelerometer smoothed over about this long, so the hand's own acceleration
+// while writing averages out. Readings far from 1 g are mostly hand acceleration and are skipped.
+const GRAVITY_SMOOTHING_MS = 500;
+const GRAVITY_MIN_G = 0.8;
+const GRAVITY_MAX_G = 1.2;
+// When the pen points almost straight up or down, the sideways axis is undefined. Below this,
+// up and down falls back to the fixed vector.
+const MIN_SIDEWAYS = 0.2;
 
 function dot(a, b) {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
@@ -91,6 +115,10 @@ export function dominantAxis(v) {
   return { axis: AXES[best], sign: v[best] < 0 ? -1 : 1, share: Math.abs(v[best]) / Math.hypot(v[0], v[1], v[2]) };
 }
 
+function cross(a, b) {
+  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+}
+
 export function createMotion(overrides) {
   const config = Object.assign({}, DEFAULT_CONFIG, overrides || {});
   const filterX = createOneEuro();
@@ -98,21 +126,74 @@ export function createMotion(overrides) {
   let lastT = null;
   let calibrationStartT = null;
   let sums = { gx: 0, gy: 0, gz: 0 };
+  let squares = { gx: 0, gy: 0, gz: 0 };
+  let accelSums = [0, 0, 0];
   let count = 0;
   let bias = null;
+  let movedDuringCalibration = false;
   let wizard = null;
+  // Unit vector pointing up (away from gravity) in sensor axes, or null until calibrated.
+  let up = null;
 
   function calibrate(sample) {
     if (calibrationStartT === null) {
       calibrationStartT = sample.t;
     }
+    // The window is complete once this sample falls outside it. This sample isn't part of it,
+    // so movement that starts right after holding still can't spoil the window.
+    if (sample.t - calibrationStartT < config.calibrationMs || count === 0) {
+      for (let i = 0; i < AXES.length; i++) {
+        sums[AXES[i]] += sample[AXES[i]];
+        squares[AXES[i]] += sample[AXES[i]] * sample[AXES[i]];
+      }
+      accelSums = [accelSums[0] + sample.ax, accelSums[1] + sample.ay, accelSums[2] + sample.az];
+      count++;
+      return;
+    }
+    const mean = { gx: sums.gx / count, gy: sums.gy / count, gz: sums.gz / count };
     for (let i = 0; i < AXES.length; i++) {
-      sums[AXES[i]] += sample[AXES[i]];
+      const variance = squares[AXES[i]] / count - mean[AXES[i]] * mean[AXES[i]];
+      if (Math.sqrt(Math.max(0, variance)) > STILL_MAX_STD_DPS) {
+        // The pen moved. Throw the window away and start a new one from the next sample.
+        calibrationStartT = null;
+        sums = { gx: 0, gy: 0, gz: 0 };
+        squares = { gx: 0, gy: 0, gz: 0 };
+        accelSums = [0, 0, 0];
+        count = 0;
+        movedDuringCalibration = true;
+        return;
+      }
     }
-    count++;
-    if (sample.t - calibrationStartT >= config.calibrationMs) {
-      bias = { gx: sums.gx / count, gy: sums.gy / count, gz: sums.gz / count };
+    bias = mean;
+    up = unitOrNull(accelSums);
+    movedDuringCalibration = false;
+  }
+
+  // Follows gravity as the pen turns and rolls.
+  function trackGravity(sample, dt) {
+    const accel = [sample.ax, sample.ay, sample.az];
+    const g = Math.hypot(accel[0], accel[1], accel[2]);
+    if (up === null) {
+      up = unitOrNull(accel);
+      return;
     }
+    if (g < GRAVITY_MIN_G || g > GRAVITY_MAX_G) {
+      return;
+    }
+    const k = Math.min(1, (dt * 1000) / GRAVITY_SMOOTHING_MS);
+    up = unitOrNull([up[0] + k * (accel[0] / g - up[0]), up[1] + k * (accel[1] / g - up[1]), up[2] + k * (accel[2] / g - up[2])]) || up;
+  }
+
+  // Rotation rates (deg/s, bias removed) to cursor rates, right and down positive.
+  function screenRates(rate) {
+    if (config.rollCompensation && up !== null) {
+      const rateX = -dot(rate, up) * config.horizontalSign;
+      const sideways = cross(up, config.penAxis);
+      const length = Math.hypot(sideways[0], sideways[1], sideways[2]);
+      const rateY = length >= MIN_SIDEWAYS ? dot(rate, sideways) / length : dot(rate, config.yVector);
+      return [rateX, rateY];
+    }
+    return [dot(rate, config.xVector), dot(rate, config.yVector)];
   }
 
   // Takes one sample, returns how far to move the cursor in pixels.
@@ -142,13 +223,13 @@ export function createMotion(overrides) {
     }
     const dt = dtMs / 1000;
 
+    trackGravity(sample, dt);
     const rate = [sample.gx - bias.gx, sample.gy - bias.gy, sample.gz - bias.gz];
     if (wizard !== null) {
       wizardStep(rate, sample.t, dt);
       return { dx: 0, dy: 0, ready: false };
     }
-    let rateX = dot(rate, config.xVector);
-    let rateY = dot(rate, config.yVector);
+    let [rateX, rateY] = screenRates(rate);
 
     if (config.smoothing > 0) {
       const minCutoff = smoothingToCutoff(config.smoothing);
@@ -177,16 +258,18 @@ export function createMotion(overrides) {
 
   // Measures the screen directions in three timed steps, with the cursor frozen throughout:
   //   still  hold still while the bias is measured (calibrationMs)
-  //   right  tilt the pen right, within WIZARD_STEP_MS
-  //   up     tilt the pen up, within WIZARD_STEP_MS
+  //   right  draw a line to the right, the way you write, within WIZARD_STEP_MS
+  //   down   draw a line down, the way you write, within WIZARD_STEP_MS
+  // It measures drawing, not pointing, because on the real pen the two turn the hand differently:
+  // pointing up and drawing down came out far from opposite, so down strokes slanted.
   // onProgress gets { step, progress } as it goes, progress being 0 to 1 within the step,
   // then { step: 'done', result }, { step: 'failed', reason }, or { step: 'cancelled' }.
-  // On done the new vectors are already in config. result.right and result.up each hold the
+  // On done the new vectors are already in config. result.right and result.down each hold the
   // measured vector, its size in degrees, and the dominant single axis and sign.
   function startAxisWizard(onProgress) {
     cancelAxisWizard();
     restartCalibration();
-    wizard = { step: 'still', onProgress: onProgress, startT: null, sum: [0, 0, 0], right: null };
+    wizard = { step: 'still', onProgress: onProgress, startT: null, sum: [0, 0, 0], upSum: [0, 0, 0], right: null };
     onProgress({ step: 'still', progress: 0 });
   }
 
@@ -212,6 +295,7 @@ export function createMotion(overrides) {
     }
     for (let i = 0; i < 3; i++) {
       wizard.sum[i] += rate[i] * dt;
+      wizard.upSum[i] += up === null ? 0 : up[i];
     }
     const elapsed = t - wizard.startT;
     if (elapsed < WIZARD_STEP_MS) {
@@ -222,40 +306,54 @@ export function createMotion(overrides) {
     const tilt = wizard.sum;
     const degrees = Math.hypot(tilt[0], tilt[1], tilt[2]);
     if (degrees < MIN_TILT_DEG) {
-      finishWizard({ step: 'failed', reason: 'No ' + wizard.step + ' tilt seen. Tilt further and try again' });
+      finishWizard({ step: 'failed', reason: 'No ' + wizard.step + ' line seen. Draw a longer line and try again' });
       return;
     }
-    const measured = { vector: normalize(tilt), degrees: degrees, dominant: dominantAxis(tilt) };
+    const measured = { vector: normalize(tilt), degrees: degrees, dominant: dominantAxis(tilt), up: unitOrNull(wizard.upSum) };
     if (wizard.step === 'right') {
       wizard.right = measured;
-      wizard.step = 'up';
+      wizard.step = 'down';
       wizard.startT = t;
       wizard.sum = [0, 0, 0];
-      wizard.onProgress({ step: 'up', progress: 0 });
+      wizard.upSum = [0, 0, 0];
+      wizard.onProgress({ step: 'down', progress: 0 });
       return;
     }
 
-    // Down is the opposite of up. Any part of it that's really sideways is removed, so the
-    // two directions are independent and a pure sideways tilt can't nudge the cursor up or down.
+    // Any part of the down line that's really sideways is removed, so the two directions are
+    // independent and a pure sideways line can't nudge the cursor up or down.
     const right = wizard.right.vector;
-    const down = [-measured.vector[0], -measured.vector[1], -measured.vector[2]];
+    const down = measured.vector;
     const along = dot(down, right);
     const offRight = Math.abs(along);
     if (offRight > 0.7) {
-      finishWizard({ step: 'failed', reason: 'The right and up tilts turned the pen the same way. Try again' });
+      finishWizard({ step: 'failed', reason: 'The right and down lines turned the pen the same way. Try again' });
       return;
     }
     config.xVector = right;
     config.yVector = normalize([down[0] - along * right[0], down[1] - along * right[1], down[2] - along * right[2]]);
-    finishWizard({ step: 'done', result: { right: wizard.right, up: measured } });
+    // Roll compensation: turning right is turning around up, so its sign says which way round.
+    // The pen points along down x up, since drawing down turns it around the sideways axis.
+    if (wizard.right.up !== null && measured.up !== null) {
+      config.horizontalSign = dot(wizard.right.vector, wizard.right.up) <= 0 ? 1 : -1;
+      const pointing = cross(down, measured.up);
+      if (Math.hypot(pointing[0], pointing[1], pointing[2]) >= MIN_SIDEWAYS) {
+        config.penAxis = normalize(pointing);
+      }
+    }
+    finishWizard({ step: 'done', result: { right: wizard.right, down: measured } });
   }
 
   function restartCalibration() {
     lastT = null;
     calibrationStartT = null;
     sums = { gx: 0, gy: 0, gz: 0 };
+    squares = { gx: 0, gy: 0, gz: 0 };
+    accelSums = [0, 0, 0];
     count = 0;
     bias = null;
+    up = null;
+    movedDuringCalibration = false;
     filterX.reset();
     filterY.reset();
   }
@@ -266,13 +364,14 @@ export function createMotion(overrides) {
     restartCalibration();
   }
 
-  // For the debug panel. progress is 0 to 1 while calibrating, bias is null until done.
+  // For the debug panel. progress is 0 to 1 while calibrating, bias is null until done, and
+  // moved is true if calibration had to start over because the pen moved.
   function getState() {
     let progress = 1;
     if (bias === null) {
       progress = calibrationStartT === null ? 0 : Math.min(1, (lastT - calibrationStartT) / config.calibrationMs);
     }
-    return { calibrating: bias === null, progress: progress, bias: bias };
+    return { calibrating: bias === null, progress: progress, bias: bias, moved: movedDuringCalibration, up: up };
   }
 
   return { update, reset, getState, startAxisWizard, cancelAxisWizard, config };
@@ -299,12 +398,21 @@ export function sanitizeConfig(raw) {
     if (typeof value !== expected) {
       continue;
     }
+    if (key === 'horizontalSign') {
+      if (value === 1 || value === -1) clean[key] = value;
+      continue;
+    }
     if (expected === 'number' && (!Number.isFinite(value) || value < 0)) {
       continue;
     }
     clean[key] = value;
   }
   return clean;
+}
+
+function unitOrNull(v) {
+  const length = Math.hypot(v[0], v[1], v[2]);
+  return length > 0 ? [v[0] / length, v[1] / length, v[2] / length] : null;
 }
 
 function isDirection(value) {

@@ -17,7 +17,7 @@ Everything else in this folder is yours. Split it into as many files as you want
 ## Suggested order
 
 1. **Bias calibration.** Average the gyro for the first 2 seconds while the pen is still, subtract that from every sample after. Return `ready: false` until it's done.
-2. **Axis mapping.** `xVector` and `yVector` are the gyro directions (gx, gy, gz) that move the cursor right and down. They're vectors, not single axes, because the sensor sits at an angle in the pen, so a sideways sweep turns all three axes. The defaults were measured on the real pen. To measure again for a different grip, press **D** and run the **Axis wizard**: hold still, tilt right, tilt up, 2 seconds each. **D** also shows live gyro graphs and records debug files (see `docs/data-format.md`).
+2. **Axis mapping.** `xVector` and `yVector` are the gyro directions (gx, gy, gz) that move the cursor right and down. They're vectors, not single axes, because the sensor sits at an angle in the pen, so a sideways sweep turns all three axes. The defaults were measured on the real pen. To measure again for a different grip, press **D** and run the **Axis wizard**: hold still, draw a line right, draw a line down, 2 seconds each, the way you write. **D** also shows live gyro graphs and records debug files (see `docs/data-format.md`).
 3. **One Euro filter** on `dx` and `dy` (or on the gyro rates) so slow movement is smooth and fast movement stays responsive.
 4. **Dead zone** so tiny hand tremor while holding still doesn't move the cursor.
 5. **Tuning** on the live pen. Sensitivity and filter settings are the knobs.

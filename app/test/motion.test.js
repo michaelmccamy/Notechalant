@@ -52,8 +52,26 @@ test('calibration holds movement back, measures the bias, then removes it', func
   assert.equal(motion.getState().bias, null);
 });
 
+test('calibration starts over if the pen moves, so movement never becomes the bias', function () {
+  const motion = createMotion();
+  // 1 s still, then a wobble, then holding still for the full 2 s.
+  run(motion, 1, function () { return BIAS; }, 0);
+  run(motion, 1.5, function (i) {
+    const wobble = 20 * Math.sin(i / 5);
+    return { gx: BIAS.gx, gy: BIAS.gy + wobble, gz: BIAS.gz };
+  }, 1000);
+  assert.equal(motion.getState().calibrating, true, 'wobbly window rejected');
+  assert.equal(motion.getState().moved, true);
+  // The rejected windows overlapped the wobble, so a full fresh window of stillness is needed.
+  run(motion, 4.5, function () { return BIAS; }, 2500);
+  const state = motion.getState();
+  assert.equal(state.calibrating, false);
+  assert.equal(state.moved, false);
+  assert.ok(Math.abs(state.bias.gy - BIAS.gy) < 1e-9, 'bias from the still part only, gy ' + state.bias.gy);
+});
+
 test('direction vectors and sensitivity are read live from config', function () {
-  const motion = createMotion({ calibrationMs: 0, xVector: [1, 0, 0], yVector: [0, 0, 1], pixelsPerDegree: 10 });
+  const motion = createMotion({ rollCompensation: false, calibrationMs: 0, xVector: [1, 0, 0], yVector: [0, 0, 1], pixelsPerDegree: 10 });
   // 10 deg/s on gx for one second at 10 px per degree is 100 px.
   let moved = total(run(motion, 1.01, function () {
     return { gx: 10, gz: 5 };
@@ -70,7 +88,7 @@ test('direction vectors and sensitivity are read live from config', function () 
 });
 
 test('deadzone ignores tremor and starts from zero speed above it', function () {
-  const motion = createMotion({ calibrationMs: 0, deadzone: 2, xVector: [0, 0, 1], yVector: [0, 1, 0] });
+  const motion = createMotion({ rollCompensation: false, calibrationMs: 0, deadzone: 2, xVector: [0, 0, 1], yVector: [0, 1, 0] });
   const tremor = total(run(motion, 1, function (i) {
     return { gz: i % 2 === 0 ? 1.5 : -1.5, gy: 1 };
   }, 0));
@@ -78,7 +96,7 @@ test('deadzone ignores tremor and starts from zero speed above it', function () 
   assert.equal(tremor.dy, 0);
 
   // 12 deg/s with a 2 deg/s deadzone moves like 10 deg/s, at 12 px per degree.
-  const motion2 = createMotion({ calibrationMs: 0, deadzone: 2, xVector: [0, 0, 1], yVector: [0, 1, 0] });
+  const motion2 = createMotion({ rollCompensation: false, calibrationMs: 0, deadzone: 2, xVector: [0, 0, 1], yVector: [0, 1, 0] });
   const moved = total(run(motion2, 1.01, function () {
     return { gz: 12 };
   }, 0));
@@ -97,7 +115,7 @@ test('smoothing reduces jitter but still gets to a steady speed', function () {
     }
     return sum;
   }
-  const axes = { calibrationMs: 0, xVector: [0, 0, 1], yVector: [0, 1, 0] };
+  const axes = { rollCompensation: false, calibrationMs: 0, xVector: [0, 0, 1], yVector: [0, 1, 0] };
   const raw = run(createMotion(Object.assign({ smoothing: 0 }, axes)), 2, noisy, 0);
   const smooth = run(createMotion(Object.assign({ smoothing: 0.6 }, axes)), 2, noisy, 0);
   assert.ok(jitter(smooth) < jitter(raw) * 0.3, 'jitter ' + jitter(smooth) + ' vs ' + jitter(raw));
@@ -121,9 +139,8 @@ function still() {
   return {};
 }
 
-test('axis wizard measures a tilted sensor: still, then tilt right, then tilt up', function () {
-  const UP = [-DOWN[0], -DOWN[1], -DOWN[2]];
-  const motion = createMotion({ xVector: [0, 0, 1], yVector: [0, -1, 0] });
+test('axis wizard measures a tilted sensor: still, then a line right, then a line down', function () {
+  const motion = createMotion({ rollCompensation: false, xVector: [0, 0, 1], yVector: [0, -1, 0] });
   const messages = [];
   motion.startAxisWizard(function (m) {
     messages.push(m);
@@ -135,7 +152,7 @@ test('axis wizard measures a tilted sensor: still, then tilt right, then tilt up
       return { gx: (r.gx || 0) + BIAS.gx, gy: (r.gy || 0) + BIAS.gy, gz: (r.gz || 0) + BIAS.gz };
     };
   }
-  // 2 s still, then each tilt: 0.5 s of turning at 40 deg/s inside its 2 s window, then held.
+  // 2 s still, then each line: 0.5 s of turning at 40 deg/s inside its 2 s window, then held.
   function tiltThenHold(direction) {
     return withBias(function (i) {
       return i < 50 ? sweep(direction, 40)() : {};
@@ -143,18 +160,18 @@ test('axis wizard measures a tilted sensor: still, then tilt right, then tilt up
   }
   let results = run(motion, 2.01, withBias(still), 0);
   results = results.concat(run(motion, 2.01, tiltThenHold(RIGHT), 2010));
-  results = results.concat(run(motion, 2.01, tiltThenHold(UP), 4020));
+  results = results.concat(run(motion, 2.01, tiltThenHold(DOWN), 4020));
 
   const steps = messages.map(function (m) { return m.step; });
-  assert.deepEqual(steps.filter(function (s, i) { return s !== steps[i - 1]; }), ['still', 'right', 'up', 'done']);
+  assert.deepEqual(steps.filter(function (s, i) { return s !== steps[i - 1]; }), ['still', 'right', 'down', 'done']);
   // Allows for rounding: the last sample comes after the wizard ends, with the bias removed.
   assert.ok(results.every(function (r) { return Math.abs(r.dx) < 1e-9 && Math.abs(r.dy) < 1e-9; }), 'cursor frozen throughout');
 
   const done = messages[messages.length - 1];
   assert.equal(done.result.right.dominant.axis, 'gz');
   assert.equal(done.result.right.dominant.sign, 1);
-  assert.equal(done.result.up.dominant.axis, 'gx');
-  assert.equal(done.result.up.dominant.sign, 1);
+  assert.equal(done.result.down.dominant.axis, 'gx');
+  assert.equal(done.result.down.dominant.sign, -1);
   assert.ok(Math.abs(done.result.right.degrees - 20) < 0.5, 'right tilt ' + done.result.right.degrees);
   for (let i = 0; i < 3; i++) {
     assert.ok(Math.abs(motion.config.xVector[i] - RIGHT[i]) < 0.01, 'x ' + motion.config.xVector);
@@ -190,6 +207,99 @@ test('reset cancels the axis wizard', function () {
   assert.deepEqual(steps, ['still', 'cancelled']);
 });
 
+// Rotates vector v around unit axis k by angle a (Rodrigues), to turn a whole sensor frame.
+function rotate(v, k, a) {
+  const c = Math.cos(a);
+  const sn = Math.sin(a);
+  const kv = k[0] * v[0] + k[1] * v[1] + k[2] * v[2];
+  const cr = [k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0]];
+  return [0, 1, 2].map((i) => v[i] * c + cr[i] * sn + k[i] * kv * (1 - c));
+}
+
+// A pen pointing along PEN, held level, rolled by `roll` radians around its own axis. Turning
+// right is turning around -UP (clockwise from above), and drawing down turns around UP x PEN.
+const PEN = [0.31, 0.89, -0.34];
+function heldPen(roll) {
+  const len = Math.hypot(...PEN);
+  const pen = PEN.map((n) => n / len);
+  // Some up direction at right angles to the pen.
+  const raw = [1, 0, 0];
+  const along = raw[0] * pen[0];
+  const up0 = [raw[0] - along * pen[0], -along * pen[1], -along * pen[2]];
+  const ul = Math.hypot(...up0);
+  const up = rotate(up0.map((n) => n / ul), pen, roll);
+  const sideways = [up[1] * pen[2] - up[2] * pen[1], up[2] * pen[0] - up[0] * pen[2], up[0] * pen[1] - up[1] * pen[0]];
+  return { up: up, turnRight: up.map((n) => -n), turnDown: sideways };
+}
+
+function penSamples(pen, rateAxis, degPerSec) {
+  return function () {
+    return {
+      gx: rateAxis[0] * degPerSec,
+      gy: rateAxis[1] * degPerSec,
+      gz: rateAxis[2] * degPerSec,
+      ax: pen.up[0],
+      ay: pen.up[1],
+      az: pen.up[2],
+    };
+  };
+}
+
+// run() fixes the accelerometer at az = 1, so these tests build samples with gravity themselves.
+function runPen(motion, seconds, rates, startT) {
+  const results = [];
+  for (let i = 0; i < Math.round(seconds * 100); i++) {
+    const r = rates(i);
+    results.push(motion.update({ t: startT + i * 10, gx: r.gx, gy: r.gy, gz: r.gz, ax: r.ax, ay: r.ay, az: r.az, pen: 0 }));
+  }
+  return total(results);
+}
+
+test('roll compensation: right is right and down is down however the pen is rolled', function () {
+  for (const roll of [0, Math.PI / 4, Math.PI / 2, Math.PI]) {
+    const pen = heldPen(roll);
+    const motion = createMotion({ calibrationMs: 0, penAxis: PEN });
+    runPen(motion, 0.2, penSamples(pen, [0, 0, 0], 0), 0);
+    const right = runPen(motion, 1, penSamples(pen, pen.turnRight, 20), 200);
+    const down = runPen(motion, 1, penSamples(pen, pen.turnDown, 20), 1200);
+    const label = 'roll ' + Math.round((roll * 180) / Math.PI) + ' deg';
+    assert.ok(Math.abs(right.dx - 240) < 1 && Math.abs(right.dy) < 1, label + ' right ' + JSON.stringify(right));
+    assert.ok(Math.abs(down.dy - 240) < 1 && Math.abs(down.dx) < 1, label + ' down ' + JSON.stringify(down));
+  }
+});
+
+test('fixed vectors mix up and down with sideways once the pen is rolled', function () {
+  const flat = heldPen(0);
+  const rolled = heldPen(Math.PI / 4);
+  const motion = createMotion({ calibrationMs: 0, rollCompensation: false, xVector: flat.turnRight, yVector: flat.turnDown });
+  const down = runPen(motion, 1, penSamples(rolled, rolled.turnDown, 20), 0);
+  assert.ok(Math.abs(down.dx) > 100, 'a down stroke drifts sideways, dx ' + down.dx);
+});
+
+test('the axis wizard learns which way the pen points and the left-right sign', function () {
+  const pen = heldPen(Math.PI / 3);
+  const motion = createMotion({ penAxis: [0, 0, 1], horizontalSign: -1 });
+  let done = null;
+  motion.startAxisWizard(function (m) {
+    if (m.step === 'done') done = m;
+  });
+  runPen(motion, 2.02, penSamples(pen, [0, 0, 0], 0), 0);
+  runPen(motion, 2.01, function (i) { return penSamples(pen, pen.turnRight, i < 50 ? 40 : 0)(); }, 2020);
+  runPen(motion, 2.01, function (i) { return penSamples(pen, pen.turnDown, i < 50 ? 40 : 0)(); }, 4030);
+  assert.ok(done !== null, 'wizard finished');
+  assert.equal(motion.config.horizontalSign, 1);
+  const len = Math.hypot(...PEN);
+  for (let i = 0; i < 3; i++) {
+    assert.ok(Math.abs(motion.config.penAxis[i] - PEN[i] / len) < 0.01, 'pen axis ' + motion.config.penAxis);
+  }
+  // And with that, a different roll still maps straight, once gravity has caught up with the
+  // new roll (it's smoothed over about half a second, and this roll changes by 105 degrees at once).
+  const other = heldPen(-Math.PI / 4);
+  runPen(motion, 3, penSamples(other, [0, 0, 0], 0), 6040);
+  const down = runPen(motion, 1, penSamples(other, other.turnDown, 20), 9040);
+  assert.ok(Math.abs(down.dy - 240) < 3 && Math.abs(down.dx) < 3, 'down after re-roll ' + JSON.stringify(down));
+});
+
 test('sanitizeConfig keeps good saved values and drops bad ones', function () {
   const clean = sanitizeConfig({
     xVector: [0, 0, 2], // normalized to length 1
@@ -207,4 +317,7 @@ test('sanitizeConfig keeps good saved values and drops bad ones', function () {
   assert.equal(clean.smoothing, DEFAULT_CONFIG.smoothing);
   assert.equal('extra' in clean, false);
   assert.deepEqual(sanitizeConfig(null), DEFAULT_CONFIG);
+  assert.equal(sanitizeConfig({ horizontalSign: -1 }).horizontalSign, -1);
+  assert.equal(sanitizeConfig({ horizontalSign: 0.5 }).horizontalSign, DEFAULT_CONFIG.horizontalSign);
+  assert.equal(sanitizeConfig({ rollCompensation: false }).rollCompensation, false);
 });

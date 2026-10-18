@@ -18,7 +18,7 @@ test('debug recording has samples with dx and dy, and a settings line per change
   recorder.start({ source: 'bluetooth', recordedAt: '2026-10-17T21:00:00.000Z' });
   recorder.add(sample(10, 0), { dx: 0, dy: 0, ready: false }, config, null);
   recorder.add(sample(20, 0), { dx: 0.123456, dy: -1, ready: true }, config, { gx: 0.1, gy: 0, gz: 0 });
-  recorder.add(sample(30, 1), { dx: 2, dy: 0, ready: true }, config, { gx: 0.1, gy: 0, gz: 0 });
+  recorder.add(sample(30, 1), { dx: 2, dy: 0, ready: true }, config, { gx: 0.1, gy: 0, gz: 0 }, true);
   recorder.add(sample(40, 1), { dx: 4, dy: 0, ready: true }, Object.assign({}, config, { pixelsPerDegree: 24 }), { gx: 0.1, gy: 0, gz: 0 });
   assert.deepEqual(recorder.progress(), { samples: 4, seconds: 0.03 });
 
@@ -33,7 +33,8 @@ test('debug recording has samples with dx and dy, and a settings line per change
   assert.equal(settings[2].config.pixelsPerDegree, 24);
 
   const samples = lines.filter(function (l) { return l.type === undefined; });
-  assert.deepEqual(samples[1], { t: 20, gx: 1, gy: -2, gz: 3, ax: 0, ay: 0, az: 1, pen: 0, dx: 0.1235, dy: -1, ready: true });
+  assert.deepEqual(samples[1], { t: 20, gx: 1, gy: -2, gz: 3, ax: 0, ay: 0, az: 1, pen: 0, space: 0, dx: 0.1235, dy: -1, ready: true });
+  assert.equal(samples[2].space, 1, 'Space held');
 });
 
 test('Load recording replays a debug file, skipping the settings lines', function () {

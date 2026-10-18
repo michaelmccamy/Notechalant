@@ -1,7 +1,7 @@
 // Debug mode, toggled with D (or T). Three parts plus the tuning controls:
 //   Live view    scrolling gx/gy/gz and dx/dy graphs for the last 5 s, pen state, bias,
 //                and a faint cursor trail on the page that shows even with the pen up
-//   Axis wizard  hold still, tilt right, tilt up, then sets the screen directions
+//   Axis wizard  hold still, draw a line right, draw a line down, then sets the screen directions
 //   Record       saves raw samples, dx/dy, and settings to a .jsonl file (debug/recorder.js)
 //
 // It sees every hardware input because it wraps the motion module that the input hub calls.
@@ -24,8 +24,8 @@ const MOVE_SERIES = [
 ];
 const WIZARD_TEXT = {
   still: 'Step 1 of 3: hold the pen still',
-  right: 'Step 2 of 3: tilt the pen right',
-  up: 'Step 3 of 3: tilt the pen up',
+  right: 'Step 2 of 3: draw a line to the right, the way you write',
+  down: 'Step 3 of 3: draw a line down, the way you write',
 };
 
 // handlers: onRecalibrate(), onStatus(text, isError), getSource() -> active input name or null
@@ -36,6 +36,7 @@ export function createDebugPanel(motion, ink, handlers) {
   const moveCanvas = document.getElementById('debug-move');
   const readoutEl = document.getElementById('debug-readout');
   const biasEl = document.getElementById('debug-bias');
+  const upEl = document.getElementById('debug-up');
   const wizardButton = document.getElementById('debug-wizard');
   const wizardText = document.getElementById('debug-wizard-text');
   const wizardBar = document.getElementById('debug-wizard-bar');
@@ -49,6 +50,21 @@ export function createDebugPanel(motion, ink, handlers) {
   let latest = null;
   let frameRequested = false;
   let wizardRunning = false;
+  // Space also draws (input/hub.js), so recordings log it next to the pen's own touch state.
+  let spaceDown = false;
+  window.addEventListener('keydown', function (event) {
+    if (event.code === 'Space') {
+      spaceDown = true;
+    }
+  });
+  window.addEventListener('keyup', function (event) {
+    if (event.code === 'Space') {
+      spaceDown = false;
+    }
+  });
+  window.addEventListener('blur', function () {
+    spaceDown = false;
+  });
 
   function onSample(sample, movement) {
     if (history.length > 0 && sample.t < history[history.length - 1].t) {
@@ -69,7 +85,7 @@ export function createDebugPanel(motion, ink, handlers) {
       trail.shift();
     }
     if (recorder.isRecording()) {
-      recorder.add(sample, movement, motion.config, motion.getState().bias);
+      recorder.add(sample, movement, motion.config, motion.getState().bias, spaceDown);
     }
   }
 
@@ -123,8 +139,10 @@ export function createDebugPanel(motion, ink, handlers) {
         '   ' + rate + '/s';
     }
     const state = motion.getState();
+    upEl.textContent = state.up === null ? '' : 'up ' + state.up.map((n) => n.toFixed(2)).join(' ');
     if (state.calibrating) {
-      biasEl.textContent = state.progress > 0 ? 'Calibrating, hold still… ' + Math.round(state.progress * 100) + '%' : 'Not calibrated yet';
+      const moved = state.moved ? 'Moved, starting over. ' : '';
+      biasEl.textContent = state.progress > 0 || state.moved ? moved + 'Hold still… ' + Math.round(state.progress * 100) + '%' : 'Not calibrated yet';
     } else {
       const b = state.bias;
       biasEl.textContent = 'gx ' + fixed(b.gx) + '  gy ' + fixed(b.gy) + '  gz ' + fixed(b.gz) + ' °/s';
@@ -167,7 +185,7 @@ export function createDebugPanel(motion, ink, handlers) {
   // ---------- Axis wizard ----------
 
   function onWizard(message) {
-    wizardRunning = message.step === 'still' || message.step === 'right' || message.step === 'up';
+    wizardRunning = message.step === 'still' || message.step === 'right' || message.step === 'down';
     wizardButton.textContent = wizardRunning ? 'Cancel' : 'Run axis wizard';
     wizardText.classList.toggle('active', wizardRunning);
     wizardBar.hidden = !wizardRunning;
@@ -187,9 +205,9 @@ export function createDebugPanel(motion, ink, handlers) {
 
   function describeResult(result) {
     return (
-      'Right: mostly ' + describeAxis(result.right) + '. Up: mostly ' + describeAxis(result.up) + '. ' +
-      'Applied as measured directions, right [' + formatVector(motion.config.xVector) + '], down [' +
-      formatVector(motion.config.yVector) + '].'
+      'Right: mostly ' + describeAxis(result.right) + '. Down: mostly ' + describeAxis(result.down) + '. ' +
+      'Pen points along [' + formatVector(motion.config.penAxis) + '] for roll compensation. Fixed vectors: right [' +
+      formatVector(motion.config.xVector) + '], down [' + formatVector(motion.config.yVector) + '].'
     );
   }
 

@@ -1,7 +1,9 @@
 // Debug recordings: every raw sample plus what the motion module made of it, as .jsonl.
 //
 //   {"type":"settings","t":15320,"source":"bluetooth","recordedAt":"...","config":{...},"bias":{...}}
-//   {"t":15320,"gx":-1.25,"gy":3.5,"gz":12.75,"ax":0.02,"ay":-0.01,"az":0.98,"pen":0,"dx":1.84,"dy":-0.2,"ready":true}
+//   {"t":15320,"gx":-1.25,"gy":3.5,"gz":12.75,"ax":0.02,"ay":-0.01,"az":0.98,"pen":0,"space":0,"dx":1.84,"dy":-0.2,"ready":true}
+//
+// pen is the pen's own touch pad. space is 1 while Space is held, which also draws.
 //
 // A settings line comes first and again whenever the config or bias changes, so every sample
 // can be matched to the settings that produced it. Sample lines are normal samples with extra
@@ -24,7 +26,7 @@ export function createDebugRecorder() {
     lastT = null;
   }
 
-  function add(sample, movement, config, bias) {
+  function add(sample, movement, config, bias, spaceDown) {
     if (lines === null) {
       return;
     }
@@ -49,6 +51,7 @@ export function createDebugRecorder() {
         ay: sample.ay,
         az: sample.az,
         pen: sample.pen,
+        space: spaceDown ? 1 : 0,
         dx: round(movement.dx),
         dy: round(movement.dy),
         ready: movement.ready,

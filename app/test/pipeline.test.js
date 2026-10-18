@@ -41,7 +41,7 @@ test('synthetic recording parses completely', function () {
 test('motion calibrates out the gyro bias and retraces the synthetic circle', function () {
   const samples = parseRecording(readFileSync(recordingPath, 'utf8'));
   // The generator maps x to gz and y to -gy, the old single axis setup, not the real pen's angle.
-  const motion = createMotion({ xVector: [0, 0, 1], yVector: [0, -1, 0] });
+  const motion = createMotion({ rollCompensation: false, xVector: [0, 0, 1], yVector: [0, -1, 0] });
 
   let x = 0;
   let y = 0;

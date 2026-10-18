@@ -64,11 +64,11 @@ Recordings in `data/recordings/` use the same format, one sample per line, with 
 
 ### Debug recordings
 
-The app's debug panel (press **D**, then **Record**) saves `debug-<date>T<time>.jsonl` files for `data/recordings/debug/`. Each sample line is a normal sample with three extra fields: `dx` and `dy`, the cursor movement in pixels the motion module produced for it, and `ready`, false while calibrating or running the axis wizard. Settings lines are mixed in:
+The app's debug panel (press **D**, then **Record**) saves `debug-<date>T<time>.jsonl` files for `data/recordings/debug/`. Each sample line is a normal sample with four extra fields: `space`, 1 while Space was held (it draws like the pen's touch pad, which is `pen`), `dx` and `dy`, the cursor movement in pixels the motion module produced for it, and `ready`, false while calibrating or running the axis wizard. Settings lines are mixed in:
 
 ```json
 {"type":"settings","t":15320,"source":"bluetooth","recordedAt":"2026-10-17T21:30:05.000Z","config":{"xVector":[0.47,-0.43,0.77],"yVector":[-0.8,-0.55,0.23],"pixelsPerDegree":12,"smoothing":0,"smoothingBeta":0.02,"deadzone":0,"calibrationMs":2000,"maxGapMs":50},"bias":{"gx":-1.2,"gy":1.29,"gz":0.82}}
-{"t":15320,"gx":-1.25,"gy":3.5,"gz":12.75,"ax":0.02,"ay":-0.01,"az":0.98,"pen":0,"dx":1.84,"dy":-0.2,"ready":true}
+{"t":15320,"gx":-1.25,"gy":3.5,"gz":12.75,"ax":0.02,"ay":-0.01,"az":0.98,"pen":0,"space":0,"dx":1.84,"dy":-0.2,"ready":true}
 ```
 
 A settings line comes first and again whenever the motion settings or the measured bias change, and applies to the samples after it. `bias` is `null` until calibration finishes. `source` is the input that was running (`bluetooth`, `serial`, `relay`, `wifi`, `recording`), or `null`. Settings lines don't have the sample fields, so **Load recording** skips them and replays the samples as usual.

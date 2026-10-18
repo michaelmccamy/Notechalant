@@ -12,7 +12,7 @@ import { DEFAULT_CONFIG, sanitizeConfig, smoothingToCutoff } from '../motion/ind
 const STORAGE_KEY = 'notechalant.motion';
 // Only the knobs on the panel are saved, so a later change to another default
 // (calibration time, say) isn't hidden by an old saved value.
-const TUNED_KEYS = ['pixelsPerDegree', 'xVector', 'yVector', 'smoothing', 'deadzone'];
+const TUNED_KEYS = ['pixelsPerDegree', 'rollCompensation', 'penAxis', 'horizontalSign', 'xVector', 'yVector', 'smoothing', 'deadzone'];
 const AXIS_NAMES = ['gx', 'gy', 'gz'];
 
 export function loadMotionSettings() {
@@ -78,6 +78,7 @@ export function createTuningControls(motion, handlers) {
     xVector: { select: document.getElementById('tune-x-axis'), invert: document.getElementById('tune-invert-x') },
     yVector: { select: document.getElementById('tune-y-axis'), invert: document.getElementById('tune-invert-y') },
   };
+  const rollInput = document.getElementById('tune-roll');
   const outputs = {
     pixelsPerDegree: document.getElementById('tune-sensitivity-value'),
     smoothing: document.getElementById('tune-smoothing-value'),
@@ -90,6 +91,7 @@ export function createTuningControls(motion, handlers) {
     Object.keys(sliders).forEach(function (key) {
       sliders[key].value = config[key];
     });
+    rollInput.checked = config.rollCompensation;
     Object.keys(directions).forEach(function (key) {
       const d = directions[key];
       const axis = vectorToAxis(config[key]);
@@ -124,6 +126,12 @@ export function createTuningControls(motion, handlers) {
     });
     blurOnChange(sliders[key]);
   });
+
+  rollInput.addEventListener('input', function () {
+    config.rollCompensation = rollInput.checked;
+    changed();
+  });
+  blurOnChange(rollInput);
 
   Object.keys(directions).forEach(function (key) {
     const d = directions[key];
